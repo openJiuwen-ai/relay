@@ -1,0 +1,369 @@
+# OfficeClaw Skills Manifest — 路由单一真相源
+# 仅登记 office-claw-skills 顶层目录下的官方技能。
+# refs/ 为参考资料，不作为独立 skill 触发。
+#
+# 更新日期：2026-04-29
+# 分类：4 大类（办公套件、企业协作、自媒体、开发与工程）
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1. 文档与办公 (Office Productivity) — 3 个
+# ═══════════════════════════════════════════════════════════════════════════════
+
+skills:
+
+  # ── 文档与办公 ──
+
+  minimax-pdf:
+    description: >
+      高视觉质量 PDF 技能。支持从零生成设计化 PDF、填写现有 PDF 表单，
+      以及把 Markdown、文本或现有文档重设计成可打印 PDF。
+    triggers:
+      - "make a PDF"
+      - "generate a report"
+      - "proposal"
+      - "resume"
+      - "fill out this PDF"
+      - "reformat this document"
+    not_for:
+      - "Word 原始编辑"
+      - "纯数据表格"
+    output: "Print-ready PDF"
+    dependencies:
+      python:
+        - "reportlab"
+        - "pypdf"
+      node:
+        - "playwright"
+      system:
+        - "Python 3"
+        - "Node.js"
+        - "Chromium"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  minimax-xlsx:
+    description: >
+      Excel 专业处理技能。覆盖创建、读取、分析、编辑、修复、校验 .xlsx/.xlsm/.csv/.tsv，
+      强调零格式损失与公式正确性。
+    triggers:
+      - "spreadsheet"
+      - "Excel"
+      - ".xlsx"
+      - ".csv"
+      - "pivot table"
+      - "financial model"
+    not_for:
+      - "Word 文档"
+      - "HTML 报告"
+    output: ".xlsx/.xlsm/.csv analysis or edited file"
+    dependencies:
+      python:
+        - "pandas"
+        - "openpyxl"
+      system:
+        - "LibreOffice (optional, recalculation)"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  official-doc-formatter:
+    description: >
+      公文格式化技能。按 GB/T 9704-2012 及用户规范对请示、方案、附件等
+      Word 文档进行正式排版和样式校准。
+    triggers:
+      - "公文格式"
+      - "请示"
+      - "方案"
+      - "附件格式"
+      - "GB/T 9704"
+      - "格式化Word"
+    not_for:
+      - "自由创意排版"
+      - "PDF 表单"
+    output: "GB/T 9704 formatted Word document"
+    dependencies:
+      python:
+        - "python-docx"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  
+
+  
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+# 2. 企业协作 (Enterprise Collaboration) — 2 个
+# ═══════════════════════════════════════════════════════════════════════════════
+
+  meeting-autopilot-pro:
+    description: >
+      会议全生命周期技能。覆盖会前准备、会中笔记、会后摘要、行动项提取、
+      跟进追踪、会议负载分析和会议记忆检索。
+    triggers:
+      - "Prep me for my meeting with X"
+      - "I have a call in 30 minutes"
+      - "Meeting starting now"
+      - "Meeting done, here are my notes"
+      - "Send the follow-up for today's call"
+      - "What action items came out of today"
+    not_for:
+      - "非会议场景"
+      - "单纯日历创建"
+    output: "Meeting brief / notes / follow-up / action tracking"
+    dependencies:
+      services:
+        - "Calendar connector (optional)"
+        - "Email connector (optional)"
+        - "Task / CRM connector (optional)"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  email-manager:
+    description: >
+      邮件管理技能。支持发送、查收、回复、标记邮件，并兼容 QQ 邮箱、Gmail、
+      163 邮箱、Outlook 等主流邮箱服务。
+    triggers:
+      - "发邮件"
+      - "发送邮件"
+      - "查邮件"
+      - "回复邮件"
+      - "标记已读"
+      - "Gmail"
+    not_for:
+      - "即时消息聊天"
+      - "日历事件管理"
+    output: "Email send/read/reply/mark result"
+    dependencies:
+      system:
+        - "Python 3 standard library"
+      services:
+        - "IMAP / SMTP mailbox access"
+        - "Mailbox credentials or app password"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  daily-briefing:
+    description: >
+      每日销售简报技能。把当天会议、重点客户、待跟进事项整理为一份
+      可快速浏览的优先级简报。
+    triggers:
+      - "morning briefing"
+      - "daily brief"
+      - "what's on my plate today"
+      - "prep my day"
+      - "start my day"
+    not_for:
+      - "会议纪要归档"
+      - "全天候执行型自动化"
+    output: "Prioritized daily briefing"
+    dependencies:
+      services:
+        - "Calendar connector (optional)"
+        - "CRM connector (optional)"
+        - "Email connector (optional)"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  knowledge-organizer-xiaping:
+    description: >
+      知识整理技能。用于导入文章、整理笔记、打标签、归档内容、生成摘要，
+      并同步到 Obsidian、飞书或腾讯 IMA。
+    triggers:
+      - "知识库"
+      - "整理文章"
+      - "归档笔记"
+      - "标签"
+      - "同步飞书"
+      - "腾讯IMA"
+    not_for:
+      - "一次性临时回答"
+      - "纯代码实现"
+    output: "Structured markdown note / sync result"
+    dependencies:
+      python:
+        - "PyYAML"
+      services:
+        - "OpenClaw openclaw-lark plugin (optional, Feishu sync)"
+        - "Tencent IMA OpenAPI credentials (optional)"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  lidan-writing-framework:
+    description: >
+      李诞七步写作框架。适用于把哲学、商业、AI、语言学等复杂概念写得
+      深入浅出、可复述、可讲明白。
+    triggers:
+      - "李诞写作框架"
+      - "知识普及写作"
+      - "深入浅出"
+      - "复杂概念"
+      - "解释给别人"
+    not_for:
+      - "法律合同"
+      - "代码文档"
+    output: "7-step explanatory draft"
+    dependencies:
+      note:
+        - "No fixed component library; framework-only skill"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  canned-responses-review:
+    description: >
+      法务模板回复技能。针对常见法律询问生成模板化回复，
+      并识别需要升级到个别处理的情形。
+    triggers:
+      - "NDA"
+      - "数据主体请求"
+      - "供应商问询"
+      - "发现保全"
+      - "模板回复"
+      - "法律询问"
+    not_for:
+      - "个性化法律意见"
+      - "诉讼策略制定"
+    output: "Templated legal response draft"
+    dependencies:
+      note:
+        - "No fixed component library; template workflow skill"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  skill-creator:
+    description: >
+      Skill 创建与优化技能。用于新建 skill、修改现有 skill、设计评测用例、
+      运行评估并优化触发描述与效果。
+    triggers:
+      - "create a skill"
+      - "new skill"
+      - "improve skill"
+      - "optimize skill"
+      - "技能创建"
+      - "技能优化"
+    not_for:
+      - "普通单次提示词润色"
+      - "未涉及 skill 的通用代码任务"
+    output: "Skill draft / eval plan / optimized skill package"
+    dependencies:
+      system:
+        - "Python 3"
+      note:
+        - "May use bundled eval scripts and reviewer workflow"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  skill-vetter:
+    description: >
+      Skill 安全审查技能。用于在安装来自 ClawdHub、GitHub 或其他来源的 skill 前，
+      审核权限范围、可疑模式和潜在安全风险。
+    triggers:
+      - "vet skill"
+      - "install skill"
+      - "review this skill"
+      - "ClawdHub"
+      - "技能审查"
+      - "技能安装前检查"
+    not_for:
+      - "直接创建新 skill"
+      - "普通业务代码安全审计"
+    output: "Skill vetting report with risk classification"
+    dependencies:
+      note:
+        - "Security review workflow; source and permission analysis required"
+    next: []
+    sop_step: null
+    merged_from: null
+
+  openai-whisper-cn:
+    description: >
+      本地语音转文字（Whisper CLI），国内加速版。
+      支持 pip 镜像、HuggingFace 镜像、imageio-ffmpeg，
+      无需 API Key，无需系统 ffmpeg。
+    triggers:
+      - "语音转文字"
+      - "音频转录"
+      - "录音转文本"
+      - "whisper"
+      - "STT"
+      - "speech to text"
+    not_for:
+      - "实时流式转录"
+      - "视频字幕生成（需要额外处理）"
+    output: "transcribed text file"
+    dependencies:
+      - "pip: openai-whisper"
+      - "pip: imageio-ffmpeg (推荐)"
+      - "ffmpeg (备选)"
+    note:
+      - "国内加速：pip 阿里云镜像、HF 镜像"
+      - "模型策略：base 首选，tiny 只用于超大文件"
+      - "预检查模型再执行转录"
+    next: [ ]
+    sop_step: null
+    merged_from: null
+
+# 注：
+# `meeting-autopilot-pro` 已纳入正式会议类技能分组。
+
+refs:
+  bug-diagnosis-capsule:
+    description: "Bug 诊断胶囊与排障套路"
+    path: "refs/bug-diagnosis-capsule.md"
+  chatgpt-browser-automation:
+    description: "ChatGPT 浏览器自动化参考"
+    path: "refs/chatgpt-browser-automation.md"
+  cicd-tracking:
+    description: "CI/CD 跟踪与状态整理"
+    path: "refs/cicd-tracking.md"
+  claude-ai-browser-automation:
+    description: "Claude 浏览器自动化参考"
+    path: "refs/claude-ai-browser-automation.md"
+  feature-doc-template:
+    description: "Feature 文档模板"
+    path: "refs/feature-doc-template.md"
+  gemini-browser-automation:
+    description: "Gemini 浏览器自动化参考"
+    path: "refs/gemini-browser-automation.md"
+  mcp-callbacks:
+    description: "HTTP callback API 参考"
+    path: "refs/mcp-callbacks.md"
+  mcp-tool-description-standard:
+    description: "MCP 工具描述规范"
+    path: "refs/mcp-tool-description-standard.md"
+  pr-template:
+    description: "PR 模板"
+    path: "refs/pr-template.md"
+  requirements-checklist-template:
+    description: "需求点 checklist 模板"
+    path: "refs/requirements-checklist-template.md"
+  review-request-template:
+    description: "Review 请求信模板"
+    path: "refs/review-request-template.md"
+  rich-blocks:
+    description: "Rich block 创建指南"
+    path: "refs/rich-blocks.md"
+  shared-rules:
+    description: "通用协作规则与约束"
+    path: "refs/shared-rules.md"
+
+lint:
+  rules:
+    - id: has-triggers
+      check: "每个 skill 必须定义 triggers、not_for、output"
+    - id: bootstrap-consistent
+      check: "BOOTSTRAP.md 中的官方 skill 列表必须与 manifest skills 键集合一致"
+    - id: dir-consistent
+      check: "manifest skills 键集合必须与 office-claw-skills 顶层实际 skill 目录一致"
+    - id: refs-exist
+      check: "refs 中的 path 必须在 office-claw-skills/refs/ 下存在"
+    - id: dependencies-documented
+      check: "有外部组件库、系统组件或服务依赖的 skill 必须在 manifest 中声明 dependencies"

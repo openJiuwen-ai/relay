@@ -1,0 +1,119 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { detectUserMention } from '../dist/routes/user-mention.js';
+
+describe('detectUserMention', () => {
+  it('detects @用户 at line start', () => {
+    assert.equal(detectUserMention('请看这个\n@用户\n帮忙确认'), true);
+  });
+
+  it('detects @co-creator at line start', () => {
+    assert.equal(detectUserMention('@co-creator 请帮忙看看'), true);
+  });
+
+  it('ignores @用户 in middle of line', () => {
+    assert.equal(detectUserMention('告诉@用户这件事'), false);
+  });
+
+  it('ignores @co-creator inside code block', () => {
+    assert.equal(detectUserMention('```\n@co-creator\n```'), false);
+  });
+
+  it('returns false for no mention', () => {
+    assert.equal(detectUserMention('普通消息没有 mention'), false);
+  });
+
+  it('handles leading whitespace before @co-creator', () => {
+    assert.equal(detectUserMention('  @用户 看看'), true);
+  });
+
+  it('returns false for empty string', () => {
+    assert.equal(detectUserMention(''), false);
+  });
+
+  it('detects @co-creator case-insensitively', () => {
+    assert.equal(detectUserMention('@Co-Creator 请看'), true);
+    assert.equal(detectUserMention('@CO-CREATOR 请看'), true);
+  });
+
+  it('handles multiple code blocks correctly', () => {
+    assert.equal(detectUserMention('```js\n@co-creator\n```\n普通文本\n```\n@用户\n```'), false);
+  });
+
+  it('detects @用户 after code block', () => {
+    assert.equal(detectUserMention('```\ncode\n```\n@用户 看看'), true);
+  });
+
+  it('OQ-1: rejects @co-creator123 (token boundary)', () => {
+    assert.equal(detectUserMention('@co-creator123 not a real mention'), false);
+  });
+
+  it('OQ-1: accepts @co-creator followed by CJK punctuation', () => {
+    assert.equal(detectUserMention('@co-creator，请看'), true);
+  });
+
+  it('OQ-1: accepts @co-creator at end of line', () => {
+    assert.equal(detectUserMention('@co-creator'), true);
+  });
+
+  it('OQ-1: accepts @用户 followed by space', () => {
+    assert.equal(detectUserMention('@用户 检查一下'), true);
+  });
+
+  it('R2-P2: accepts @co-creator followed by CJK text (no space)', () => {
+    assert.equal(detectUserMention('@co-creator请看'), true);
+  });
+
+  it('R2-P2: accepts @用户 followed by CJK text (no space)', () => {
+    assert.equal(detectUserMention('@用户请看'), true);
+  });
+
+  it('R2-P2: still rejects @co-creatorfoo (ASCII continuation)', () => {
+    assert.equal(detectUserMention('@co-creatorfoo'), false);
+  });
+
+  // F067 co-creator config: configured mention patterns
+  it('detects configured co-creator @co-creator at line start', () => {
+    assert.equal(detectUserMention('@co-creator 请看'), true);
+    assert.equal(detectUserMention('@co-creator 请看'), true);
+  });
+
+  it('detects configured co-creator @co-creator at line start', () => {
+    assert.equal(detectUserMention('@co-creator 帮忙确认'), true);
+  });
+
+  it('detects configured co-creator @co-creator at line start', () => {
+    assert.equal(detectUserMention('@co-creator 看看'), true);
+  });
+
+  it('rejects @co-creator continuation (e.g. @co-creatorFoo)', () => {
+    assert.equal(detectUserMention('@co-creatorFoo not a mention'), false);
+  });
+
+  it('accepts @co-creator followed by CJK text', () => {
+    assert.equal(detectUserMention('@co-creator请看'), true);
+  });
+
+  // F140 Tier 1: 新默认 fallback @用户 覆盖
+  it('detects @用户 at line start (new default fallback)', () => {
+    assert.equal(detectUserMention('@用户 请看'), true);
+  });
+
+  it('detects @用户 followed by CJK text (no space)', () => {
+    assert.equal(detectUserMention('@用户请看'), true);
+  });
+
+  it('ignores @用户 in middle of line', () => {
+    assert.equal(detectUserMention('告诉@用户这件事'), false);
+  });
+
+  it('detects @用户 case-insensitively', () => {
+    assert.equal(detectUserMention('@用户 帮忙确认'), true);
+  });
+});

@@ -1,0 +1,107 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const apiFetchMock = vi.hoisted(() => vi.fn());
+const getUserIdMock = vi.hoisted(() => vi.fn(() => 'alice'));
+const confirmDialogSpy = vi.hoisted(() => vi.fn());
+const removeMessageMock = vi.fn();
+
+vi.mock('@/stores/chatStore', () => ({
+  useChatStore: (selector: (state: { removeMessage: typeof removeMessageMock }) => unknown) =>
+    selector({ removeMessage: removeMessageMock }),
+}));
+
+vi.mock('@/utils/api-client', () => ({
+  apiFetch: apiFetchMock,
+}));
+
+vi.mock('@/utils/userId', () => ({
+  getUserId: getUserIdMock,
+}));
+
+vi.mock('@/components/ConfirmDialog', () => ({
+  ConfirmDialog: (props: unknown) => {
+    confirmDialogSpy(props);
+    return null;
+  },
+}));
+
+describe('MessageActions identity source', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeAll(() => {
+    (globalThis as { React?: typeof React }).React = React;
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  });
+
+  beforeEach(() => {
+    removeMessageMock.mockReset();
+    window.history.pushState({}, '', '/?userId=alice');
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    apiFetchMock.mockReset();
+    getUserIdMock.mockReset();
+    getUserIdMock.mockReturnValue('alice');
+    confirmDialogSpy.mockReset();
+    apiFetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ threadId: 'thread-branch-1' }),
+    });
+  });
+
+  afterEach(() => {
+    if (root) {
+      act(() => {
+        root.unmount();
+      });
+    }
+    if (container) {
+      container.remove();
+    }
+  });
+
+  afterAll(() => {
+    delete (globalThis as { React?: typeof React }).React;
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it('keeps legacy branch action hidden by default', async () => {
+    const { MessageActions } = await import('@/components/MessageActions');
+
+    await act(async () => {
+      root.render(
+        // eslint-disable-next-line react/no-children-prop -- createElement in test
+        React.createElement(MessageActions, {
+          message: {
+            id: 'msg-1',
+            type: 'assistant',
+            agentId: 'codex',
+            content: 'hello',
+            timestamp: Date.now(),
+          },
+          threadId: 'thread-1',
+          isLastCopyVisible: true,
+          // biome-ignore lint/correctness/noChildrenProp: createElement in test
+          children: React.createElement('div', null, 'assistant message'),
+        }),
+      );
+    });
+
+    const branchButton = container.querySelector('button[title="从这里分支"]') as HTMLButtonElement | null;
+    expect(branchButton).toBeNull();
+    expect(apiFetchMock).not.toHaveBeenCalled();
+    expect(getUserIdMock).not.toHaveBeenCalled();
+    expect(confirmDialogSpy).toHaveBeenCalled();
+  });
+});

@@ -1,0 +1,396 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+/* ─── Shared Card Tokens ─────────────────────── */
+
+.container {
+  /* 卡片基础尺寸 */
+  --card-radius: 12px;
+  --card-height: 194px;
+  --card-min-width: 205px;
+  --card-max-width: 300px;
+  --card-gap: 16px;
+
+  background-color: var(--picker-container-bg);
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  height: 100%;
+  min-height: 0;
+}
+
+.tabSection {
+  flex: 1;
+}
+
+.tabRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchSection {
+  flex-shrink: 0;
+  margin-top: 16px;
+}
+
+.cardGrid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  /* 最多显示两行卡片：2 * 194px + gap(16px) */
+  max-height: calc(var(--card-height) * 2 + var(--card-gap));
+  margin-top: 16px;
+}
+
+/* 可视区域高度小于700px时，只显示一行卡片 */
+@media (max-height: 700px) {
+  .cardGrid {
+    max-height: var(--card-height);
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
+  gap: var(--card-gap);
+}
+
+/* ─── Close Button ─────────────────────────── */
+
+.closeBtn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.closeBtn:hover {
+  color: var(--text-primary);
+  background-color: var(--surface-hover-muted);
+}
+
+/* ─── Card ─────────────────────────────────── */
+
+.card {
+  position: relative;
+  border-radius: var(--card-radius);
+  background: var(--picker-card-bg);
+  overflow: hidden;
+  border: 1px solid var(--picker-border);
+  height: var(--card-height);
+  width: 100%;
+  max-width: var(--card-max-width);
+  transition:
+    box-shadow 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.card:hover {
+  box-shadow: var(--card-hover-shadow);
+  border-color: var(--picker-hover-border, #1476FF);
+}
+
+.cardSelected {
+  border-color: var(--picker-hover-border, #1476FF);
+}
+
+.cardDisabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.previewContainer {
+  position: absolute;
+  right: -116px;
+  top: 44px;
+  width: 290px;
+  border-radius: 12px;
+  overflow: hidden;
+  pointer-events: none;
+  transform: rotate(-5deg);
+}
+
+.previewImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cardTitleArea {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cardName {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardNameTooltip {
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ─── More Menu Button (hover only) ─────────── */
+.moreMenuBtn {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.card:hover .moreMenuBtn {
+  opacity: 1;
+}
+
+/* ─── Card Action Button ────────────────────── */
+
+.cardAction {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+  z-index: 1;
+}
+
+.card:hover .cardAction {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cardActionBtn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+/* ─── Upload Card ───────────────────────────── */
+
+.uploadCard {
+  position: relative;
+  border-radius: var(--card-radius);
+  background: var(--button-default-bg);
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+  box-shadow 150ms ease,
+  background-color 150ms ease;
+  border: 1px dashed var(--picker-border);
+  height: var(--card-height);
+  width: 100%;
+  max-width: var(--card-max-width);
+}
+
+.uploadCard:hover {
+  box-shadow: var(--card-hover-shadow);
+}
+
+.uploadCardDragOver {
+  border-style: dashed;
+  border-color: var(--accent-primary);
+  background-color: var(--surface-selected);
+}
+
+.uploadCardDisabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.uploadCardDisabled:hover {
+  box-shadow: none;
+}
+
+.uploadContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 16px;
+}
+
+.uploadIcon {
+  color: var(--text-muted);
+  width: 16px;
+  height: 16px;
+}
+
+.uploadText {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.uploadHint {
+  font-size: var(--font-size-sm, 12px);
+  color: var(--text-label-secondary);
+  text-align: center;
+}
+
+/* 我的模板为空时，上传卡片独占整个内容区 */
+.uploadCardFull {
+  grid-column: 1 / -1;
+  height: var(--card-height);
+  max-width: none;
+  width: 100%;
+}
+
+.uploadCardFull .uploadContent {
+  height: 100%;
+}
+
+/* ─── Loading Card ─────────────────────────── */
+
+.loadingCard {
+  position: relative;
+  border-radius: var(--card-radius);
+  background-image: url('/images/ppt-preview/placeholder-main.webp');
+  background-size: 300%;
+  background-position: center center;
+  background-repeat: no-repeat;
+  overflow: hidden;
+  cursor: not-allowed;
+  opacity: 0.8;
+  border: 1px solid var(--picker-border);
+  height: var(--card-height);
+  width: 100%;
+  max-width: var(--card-max-width);
+  padding: 16px;
+}
+
+.loadingLabel {
+  font-size: var(--font-size-sm, 12px);
+  color: #191919;
+}
+
+.failedCard {
+  background-color: var(--picker-card-bg);
+  background-image: none;
+  background-size: cover;
+  background-position: center;
+  opacity: 1;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid var(--picker-border);
+}
+
+.failedTitleArea {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.failedNameArea {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.failedNameTooltip {
+  display: flex;
+  align-items: center;
+  flex-shrink: 1;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.failedErrorIcon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.failedInfoIcon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--picker-failed-info-icon-color);
+  cursor: pointer;
+}
+
+.failedName {
+  flex-shrink: 1;
+  min-width: 0;
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failedDeleteBtn {
+  flex-shrink: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  transition: color 150ms ease;
+}
+
+.failedDeleteBtn:hover {
+  color: var(--state-error-text);
+}
+
+.failedDeleteIcon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+}
+
+/* ─── Empty State ───────────────────────────── */
+
+.emptyState {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+}

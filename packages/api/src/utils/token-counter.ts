@@ -1,0 +1,68 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+/**
+ * Token Counter — js-tiktoken wrapper for context budget estimation
+ *
+ * Uses cl100k_base (GPT-4 family) as universal estimator.
+ * ~85-90% accurate for Claude/Gemini, exact for GPT.
+ * Actual token counts come from CLI usage data (see F8 Phase 2).
+ */
+
+import { encodingForModel } from 'js-tiktoken';
+
+/** Lazily initialized singleton encoder */
+let encoder: ReturnType<typeof encodingForModel> | null = null;
+
+function getEncoder() {
+  if (!encoder) {
+    encoder = encodingForModel('gpt-4o');
+  }
+  return encoder;
+}
+
+/**
+ * Estimate token count for a text string.
+ * Returns 0 for empty/falsy input.
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return getEncoder().encode(text).length;
+}
+
+interface MessageLike {
+  content?: string;
+  contentBlocks?: ReadonlyArray<{ type: string; text?: string }>;
+}
+
+/**
+ * Estimate total tokens across messages, respecting per-message content truncation.
+ * Only counts text content (skips images and other non-text blocks).
+ */
+export function estimateTokensFromMessages(messages: MessageLike[], maxContentLength: number): number {
+  const enc = getEncoder();
+  let total = 0;
+
+  for (const msg of messages) {
+    // Primary content field
+    if (msg.content) {
+      const truncated = msg.content.length > maxContentLength ? msg.content.slice(0, maxContentLength) : msg.content;
+      total += enc.encode(truncated).length;
+    }
+
+    // ContentBlocks — text only
+    if (msg.contentBlocks) {
+      for (const block of msg.contentBlocks) {
+        if (block.type === 'text' && block.text) {
+          const truncated = block.text.length > maxContentLength ? block.text.slice(0, maxContentLength) : block.text;
+          total += enc.encode(truncated).length;
+        }
+      }
+    }
+  }
+
+  return total;
+}

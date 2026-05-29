@@ -1,0 +1,51 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+// F102: Memory domain barrel export
+
+export { EmbeddingService } from './EmbeddingService.js';
+// Interfaces + types
+export type {
+  ConsistencyReport,
+  Edge,
+  EmbedConfig,
+  EmbedModelInfo,
+  EvidenceItem,
+  EvidenceKind,
+  EvidenceStatus,
+  IEmbeddingService,
+  IEvidenceStore,
+  IIndexBuilder,
+  IKnowledgeResolver,
+  IMarkerQueue,
+  IMaterializationService,
+  IReflectionService,
+  KnowledgeResult,
+  Marker,
+  MarkerFilter,
+  MarkerStatus,
+  MaterializeResult,
+  RebuildResult,
+  ReflectionContext,
+  SearchOptions,
+} from './interfaces.js';
+export {
+  EVIDENCE_KINDS,
+  IEmbeddingServiceSymbol,
+  IEvidenceStoreSymbol,
+  IIndexBuilderSymbol,
+  IKnowledgeResolverSymbol,
+  IMarkerQueueSymbol,
+  IMaterializationServiceSymbol,
+  IReflectionServiceSymbol,
+  MARKER_STATUSES,
+  resolveEmbedConfig,
+} from './interfaces.js';
+export { KnowledgeResolver } from './KnowledgeResolver.js';
+export { MarkerQueue } from './MarkerQueue.js';
+export { MaterializationService } from './MaterializationService.js';
+export { ReflectionService } from './ReflectionService.js';
+export { SemanticReranker } from './SemanticReranker.js';

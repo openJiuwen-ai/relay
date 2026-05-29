@@ -1,0 +1,5 @@
+<svg viewBox="0 0 8 8" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="8.000000" height="8.000000" fill="none" customFrame="#000000">
+	<rect id=".原子组件/锚点-图标" width="8.000000" height="8.000000" x="0.000000" y="0.000000" />
+	<circle id="icon/组件/锚点/当前位置" cx="4" cy="4" r="4" fill="rgb(25,25,25)" />
+	<circle id="icon/组件/锚点/当前位置" cx="4" cy="4" r="3.5" stroke="rgb(25,25,25)" stroke-width="1" />
+</svg>

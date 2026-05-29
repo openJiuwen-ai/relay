@@ -1,0 +1,197 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+/**
+ * Redis Draft Store — streaming draft persistence (#80)
+ *
+ * Redis 数据结构 (office-claw: prefix applied by client):
+ *   draft:{userId}:{threadId}:{invocationId}  → Hash (draft details)
+ *   drafts:idx:{userId}:{threadId}            → Set (invocationId members)
+ *
+ * No TTL by default (explicit cleanup only via delete/deleteByThread).
+ */
+
+import type { AgentId, TaskRunPersistExtra } from '@openjiuwen/relay-shared';
+import type { RedisClient } from '@openjiuwen/relay-shared/utils';
+import type { DraftRecord, IDraftStore } from '../ports/DraftStore.js';
+import { DraftKeys } from '../redis-keys/draft-keys.js';
+
+const DEFAULT_TTL = 0; // disabled
+
+export class RedisDraftStore implements IDraftStore {
+  private readonly redis: RedisClient;
+  private readonly ttlSeconds: number | null;
+
+  constructor(redis: RedisClient, options?: { ttlSeconds?: number }) {
+    this.redis = redis;
+    const ttl = options?.ttlSeconds;
+    if (ttl === undefined) {
+      this.ttlSeconds = DEFAULT_TTL;
+    } else if (!Number.isFinite(ttl)) {
+      this.ttlSeconds = null;
+    } else if (ttl <= 0) {
+      this.ttlSeconds = null;
+    } else {
+      this.ttlSeconds = Math.floor(ttl);
+    }
+  }
+
+  async upsert(draft: DraftRecord): Promise<void> {
+    const detailKey = DraftKeys.detail(draft.userId, draft.threadId, draft.invocationId);
+    const indexKey = DraftKeys.index(draft.userId, draft.threadId);
+
+    const existing = await this.redis.hgetall(detailKey);
+    const preserveUserStopped =
+      draft.userStopped === true || (typeof existing.userStopped === 'string' && existing.userStopped === '1');
+
+    const fields: Record<string, string> = {
+      userId: draft.userId,
+      threadId: draft.threadId,
+      invocationId: draft.invocationId,
+      agentId: draft.agentId as string,
+      content: draft.content,
+      updatedAt: String(draft.updatedAt),
+    };
+    if (preserveUserStopped) {
+      fields.userStopped = '1';
+    }
+    if (draft.toolEvents && draft.toolEvents.length > 0) {
+      fields.toolEvents = JSON.stringify(draft.toolEvents);
+    }
+    if (draft.thinking) {
+      fields.thinking = draft.thinking;
+    }
+    if (draft.taskRuns) {
+      fields.taskRuns = JSON.stringify(draft.taskRuns);
+    }
+
+    const pipeline = this.redis.multi();
+    pipeline.hset(detailKey, fields);
+    pipeline.sadd(indexKey, draft.invocationId);
+    if (this.ttlSeconds !== null) {
+      pipeline.expire(detailKey, this.ttlSeconds);
+      pipeline.expire(indexKey, this.ttlSeconds);
+    }
+    await pipeline.exec();
+  }
+
+  async touch(userId: string, threadId: string, invocationId: string): Promise<void> {
+    if (this.ttlSeconds === null) return;
+    const detailKey = DraftKeys.detail(userId, threadId, invocationId);
+    const indexKey = DraftKeys.index(userId, threadId);
+
+    const pipeline = this.redis.multi();
+    // Update updatedAt so draft sort order stays fresh during tool-only phases
+    pipeline.hset(detailKey, 'updatedAt', String(Date.now()));
+    pipeline.expire(detailKey, this.ttlSeconds);
+    pipeline.expire(indexKey, this.ttlSeconds);
+    await pipeline.exec();
+  }
+
+  async getByThread(userId: string, threadId: string): Promise<DraftRecord[]> {
+    const indexKey = DraftKeys.index(userId, threadId);
+    const invocationIds = await this.redis.smembers(indexKey);
+    if (invocationIds.length === 0) return [];
+
+    const pipeline = this.redis.multi();
+    for (const invId of invocationIds) {
+      pipeline.hgetall(DraftKeys.detail(userId, threadId, invId));
+    }
+    const results = await pipeline.exec();
+    if (!results) return [];
+
+    const drafts: DraftRecord[] = [];
+    const staleIds: string[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const [err, data] = results[i]!;
+      if (err || !data || typeof data !== 'object') {
+        // Hash expired but index entry remains — mark for cleanup
+        staleIds.push(invocationIds[i]!);
+        continue;
+      }
+      const d = data as Record<string, string>;
+      if (!d.invocationId) {
+        staleIds.push(invocationIds[i]!);
+        continue;
+      }
+      drafts.push(this.hydrate(d));
+    }
+
+    // Best-effort cleanup of stale index entries
+    if (staleIds.length > 0) {
+      this.redis.srem(indexKey, ...staleIds).catch(() => {});
+    }
+
+    return drafts;
+  }
+
+  async delete(userId: string, threadId: string, invocationId: string): Promise<void> {
+    const detailKey = DraftKeys.detail(userId, threadId, invocationId);
+    const indexKey = DraftKeys.index(userId, threadId);
+
+    const pipeline = this.redis.multi();
+    pipeline.del(detailKey);
+    pipeline.srem(indexKey, invocationId);
+    await pipeline.exec();
+  }
+
+  async deleteByThread(userId: string, threadId: string): Promise<void> {
+    const indexKey = DraftKeys.index(userId, threadId);
+    const invocationIds = await this.redis.smembers(indexKey);
+
+    if (invocationIds.length === 0) {
+      // Still delete the index key in case it's empty but exists
+      await this.redis.del(indexKey);
+      return;
+    }
+
+    const pipeline = this.redis.multi();
+    for (const invId of invocationIds) {
+      pipeline.del(DraftKeys.detail(userId, threadId, invId));
+    }
+    pipeline.del(indexKey);
+    await pipeline.exec();
+  }
+
+  private hydrate(d: Record<string, string>): DraftRecord {
+    let toolEvents: unknown[] | undefined;
+    if (d.toolEvents) {
+      try {
+        toolEvents = JSON.parse(d.toolEvents);
+      } catch {
+        /* ignore parse errors */
+      }
+    }
+    let taskRuns: TaskRunPersistExtra | undefined;
+    if (d.taskRuns) {
+      try {
+        const parsed = JSON.parse(d.taskRuns) as unknown;
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          (parsed as { v?: unknown }).v === 1 &&
+          Array.isArray((parsed as { segments?: unknown }).segments)
+        ) {
+          taskRuns = parsed as TaskRunPersistExtra;
+        }
+      } catch {
+        /* ignore parse errors */
+      }
+    }
+    return {
+      userId: d.userId ?? '',
+      threadId: d.threadId ?? '',
+      invocationId: d.invocationId ?? '',
+      agentId: (d.agentId ?? 'opus') as AgentId,
+      content: d.content ?? '',
+      updatedAt: parseInt(d.updatedAt ?? '0', 10),
+      ...(toolEvents ? { toolEvents } : {}),
+      ...(d.thinking ? { thinking: d.thinking } : {}),
+      ...(taskRuns ? { taskRuns } : {}),
+      ...((d.userStopped === '1' || d.userStopped === 'true') ? { userStopped: true as const } : {}),
+    };
+  }
+}

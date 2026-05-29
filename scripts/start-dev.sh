@@ -1,0 +1,1187 @@
+#!/bin/bash
+
+#
+# Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+#
+
+
+# OfficeClaw 启动脚本（底层实现）
+# 用户入口:
+#   pnpm start                        — runtime worktree 稳定启动（由 runtime-worktree.sh 注入 --prod-web）
+#   pnpm start:direct                 — 当前目录稳定启动（package.json 注入 --prod-web + --profile=opensource + 非 watch API + 优先当前 .env 端口）
+#   pnpm dev:direct                   — 当前目录开发模式 (vite dev + 热重载，package.json 注入 --profile=opensource)
+#
+# 直接调用脚本:
+#   ./scripts/start-dev.sh            — 开发模式 (vite dev + Redis 持久化)
+#   ./scripts/start-dev.sh --prod-web — 前端 production build + vite preview
+#   ./scripts/start-dev.sh --quick    — 仅跳过重复构建；不改变 dev/prod 模式
+#   ./scripts/start-dev.sh --memory   — 使用内存存储 (重启丢数据)
+#   ./scripts/start-dev.sh --no-redis — 同 --memory
+#   ./scripts/start-dev.sh --profile=dev          — 家里开发默认值 (proxy ON, sidecar ON)
+#   ./scripts/start-dev.sh --profile=opensource   — 开源仓默认值 (proxy OFF, sidecar OFF)
+#   ./scripts/start-dev.sh -- --npm-registry=URL --pip-index-url=URL --hf-endpoint=URL
+#                                               — 显式指定安装/模型下载镜像（仅手动 override）
+#
+# Profile 说明:
+#   dev        — proxy ON, ASR/TTS/LLM ON, TTL=永久, redis-dev
+#   opensource — proxy OFF, ASR/TTS/LLM OFF, TTL=86400s, redis-opensource
+#   (无)       — 保持原有行为（各项 ENABLED 默认 0）
+#
+# .env 中的显式值覆盖 profile 默认值。启动摘要标注每个值的来源。
+#
+# --prod-web 模式 (runtime-worktree.sh 自动传入):
+#   - vite build + vite preview（非 vite dev）
+#   - PWA / Service Worker 启用
+#   - Tailscale / 局域网手机访问正常
+#   - --quick 时复用上次的 dist 产物
+#
+# Redis 数据目录 (可通过 env 覆盖):
+#   REDIS_PORT=6399
+#   REDIS_PROFILE=dev
+#   REDIS_DATA_DIR=~/.office-claw/redis-dev
+#   REDIS_BACKUP_DIR=~/.office-claw/redis-backups/dev
+# Parallel 本地实例若仅改 REDIS_PORT，默认会自动隔离到独立目录:
+#   REDIS_PORT=6389 -> ~/.office-claw/redis-dev-6389
+
+set -e
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/download-source-overrides.sh"
+cd "$PROJECT_DIR"
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$PROJECT_DIR/office-claw-skills/.playwright-browsers}"
+
+API_APP_DIR="${OFFICE_CLAW_API_APP_DIR:-packages/api}"
+WEB_APP_DIR="${OFFICE_CLAW_WEB_APP_DIR:-packages/web}"
+
+echo "OfficeClaw 开发环境启动"
+echo "================"
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# 解析参数
+QUICK_MODE=false
+USE_REDIS=true
+PROD_WEB=false
+DEBUG_MODE=false
+PROFILE=""
+for arg in "$@"; do
+    case $arg in
+        --quick|-q) QUICK_MODE=true ;;
+        --memory|--no-redis) USE_REDIS=false ;;
+        --prod-web) PROD_WEB=true ;;
+        --debug) DEBUG_MODE=true ;;
+        --profile=*) PROFILE="${arg#*=}" ;;
+        *)
+            parse_manual_download_source_arg "$arg" || true
+            ;;
+    esac
+done
+
+# 加载环境变量 (放最前面，后续函数需要端口号)
+# 加载顺序: 先 .inner.env (内部默认)，后 .env (用户覆盖)
+# 用户在 .env 中设置的值优先级最高，会覆盖 .inner.env 的默认值
+CLI_FRONTEND_PORT_OVERRIDE="${FRONTEND_PORT-}"
+CLI_API_SERVER_PORT_OVERRIDE="${API_SERVER_PORT-}"
+CLI_REDIS_PORT_OVERRIDE="${REDIS_PORT-}"
+CLI_REDIS_DATA_DIR_OVERRIDE="${REDIS_DATA_DIR-}"
+CLI_REDIS_BACKUP_DIR_OVERRIDE="${REDIS_BACKUP_DIR-}"
+CLI_NEXT_PUBLIC_API_URL_OVERRIDE="${NEXT_PUBLIC_API_URL-}"
+CLI_ANTHROPIC_PROXY_PORT_OVERRIDE="${ANTHROPIC_PROXY_PORT-}"
+CLI_WHISPER_PORT_OVERRIDE="${WHISPER_PORT-}"
+CLI_TTS_PORT_OVERRIDE="${TTS_PORT-}"
+CLI_LLM_POSTPROCESS_PORT_OVERRIDE="${LLM_POSTPROCESS_PORT-}"
+PREFER_DOTENV_PORTS="${OFFICE_CLAW_RESPECT_DOTENV_PORTS:-0}"
+FORCED_AUTH_PROVIDER="${OFFICE_CLAW_FORCE_AUTH_PROVIDER:-}"
+FORCE_DISABLE_SKIP_AUTH="${OFFICE_CLAW_FORCE_DISABLE_SKIP_AUTH:-0}"
+
+clear_inherited_profile_env() {
+    [ "${OFFICE_CLAW_STRICT_PROFILE_DEFAULTS:-0}" = "1" ] || return 0
+    [ -n "$PROFILE" ] || return 0
+
+    # Public direct-launch wrappers should honor the requested profile rather
+    # than ambient OfficeClaw shell exports leaked from another checkout.
+    unset ANTHROPIC_PROXY_ENABLED ASR_ENABLED TTS_ENABLED LLM_POSTPROCESS_ENABLED EMBED_ENABLED
+    unset MESSAGE_TTL_SECONDS THREAD_TTL_SECONDS TASK_TTL_SECONDS
+    unset REDIS_PROFILE
+}
+
+clear_inherited_profile_env
+
+# Load .inner.env first (internal defaults - platform URLs, CDN, signal sources)
+if [ -f .inner.env ]; then
+    set -a
+    source .inner.env
+    set +a
+fi
+
+# Load .env second (user overrides - highest priority)
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
+
+restore_cli_override() {
+    local name="$1"
+    local value="$2"
+    [ -n "$value" ] || return 0
+    export "$name=$value"
+}
+
+if [ "$PREFER_DOTENV_PORTS" != "1" ]; then
+    restore_cli_override "FRONTEND_PORT" "$CLI_FRONTEND_PORT_OVERRIDE"
+    restore_cli_override "API_SERVER_PORT" "$CLI_API_SERVER_PORT_OVERRIDE"
+    restore_cli_override "REDIS_PORT" "$CLI_REDIS_PORT_OVERRIDE"
+    restore_cli_override "REDIS_DATA_DIR" "$CLI_REDIS_DATA_DIR_OVERRIDE"
+    restore_cli_override "REDIS_BACKUP_DIR" "$CLI_REDIS_BACKUP_DIR_OVERRIDE"
+    restore_cli_override "NEXT_PUBLIC_API_URL" "$CLI_NEXT_PUBLIC_API_URL_OVERRIDE"
+    restore_cli_override "ANTHROPIC_PROXY_PORT" "$CLI_ANTHROPIC_PROXY_PORT_OVERRIDE"
+    restore_cli_override "WHISPER_PORT" "$CLI_WHISPER_PORT_OVERRIDE"
+    restore_cli_override "TTS_PORT" "$CLI_TTS_PORT_OVERRIDE"
+    restore_cli_override "LLM_POSTPROCESS_PORT" "$CLI_LLM_POSTPROCESS_PORT_OVERRIDE"
+fi
+
+if [ -n "$FORCED_AUTH_PROVIDER" ]; then
+    export OFFICE_CLAW_AUTH_PROVIDER="$FORCED_AUTH_PROVIDER"
+fi
+
+if [ "${OFFICE_CLAW_AUTH_PROVIDER:-no-auth}" = "no-auth" ]; then
+    export OFFICE_CLAW_SKIP_AUTH=1
+    export CAT_CAFE_SKIP_AUTH=1
+fi
+
+if [ "$FORCE_DISABLE_SKIP_AUTH" = "1" ]; then
+    export OFFICE_CLAW_SKIP_AUTH=0
+    export CAT_CAFE_SKIP_AUTH=0
+fi
+
+load_dare_env_from_local() {
+    local env_file=".env.local"
+    [ -f "$env_file" ] || return 0
+
+    local key raw value
+    for key in \
+        DARE_PATH \
+        DARE_ADAPTER \
+        DARE_API_KEY \
+        DARE_ENDPOINT \
+        OPENROUTER_API_KEY \
+        OPENROUTER_BASE_URL \
+        OPENAI_API_KEY \
+        OPENAI_BASE_URL \
+        ANTHROPIC_API_KEY \
+        ANTHROPIC_BASE_URL; do
+        raw=$(grep -E "^${key}=" "$env_file" | tail -n1 || true)
+        [ -n "$raw" ] || continue
+        value="${raw#*=}"
+        # 去掉包裹引号（兼容 key="value" / key='value'）
+        value="${value%\"}"; value="${value#\"}"
+        value="${value%\'}"; value="${value#\'}"
+        export "$key=$value"
+    done
+}
+
+load_dare_env_from_local
+apply_manual_download_source_overrides
+
+default_redis_port() {
+    if [ "$PROD_WEB" = true ]; then
+        echo "6399"
+    else
+        echo "6398"
+    fi
+}
+
+normalize_raw_dev_redis_defaults() {
+    [ "$USE_REDIS" = true ] || return 0
+    [ "$PROD_WEB" = false ] || return 0
+    [ "$PREFER_DOTENV_PORTS" = "1" ] && return 0
+    [ -n "$CLI_REDIS_PORT_OVERRIDE" ] && return 0
+    [ "${REDIS_PORT:-}" = "6399" ] || return 0
+
+    REDIS_PORT="6398"
+    case "${REDIS_URL:-}" in
+        ""|"redis://localhost:6399"|"redis://127.0.0.1:6399")
+            REDIS_URL="redis://localhost:6398"
+            ;;
+    esac
+}
+
+# Profile 默认值（env 变量优先，profile 作 fallback）
+apply_profile_defaults() {
+    local profile="$1"
+    # Clear previous profile state
+    unset _PROF_ANTHROPIC_PROXY_ENABLED _PROF_ASR_ENABLED _PROF_TTS_ENABLED
+    unset _PROF_LLM_POSTPROCESS_ENABLED _PROF_REDIS_PROFILE
+    unset _PROF_MESSAGE_TTL_SECONDS _PROF_THREAD_TTL_SECONDS
+    unset _PROF_TASK_TTL_SECONDS
+    case "$profile" in
+        dev)
+            _PROF_ANTHROPIC_PROXY_ENABLED=1
+            _PROF_ASR_ENABLED=1
+            _PROF_TTS_ENABLED=1
+            _PROF_LLM_POSTPROCESS_ENABLED=1
+            _PROF_MESSAGE_TTL_SECONDS=0
+            _PROF_THREAD_TTL_SECONDS=0
+            _PROF_TASK_TTL_SECONDS=0
+            _PROF_REDIS_PROFILE=dev
+            ;;
+        opensource)
+            _PROF_ANTHROPIC_PROXY_ENABLED=0
+            _PROF_ASR_ENABLED=0
+            _PROF_TTS_ENABLED=0
+            _PROF_LLM_POSTPROCESS_ENABLED=0
+            _PROF_MESSAGE_TTL_SECONDS=86400
+            _PROF_THREAD_TTL_SECONDS=86400
+            _PROF_TASK_TTL_SECONDS=86400
+            _PROF_REDIS_PROFILE=opensource
+            ;;
+        "")
+            # No profile — all _PROF_ vars stay unset, existing behavior preserved
+            ;;
+        *)
+            echo -e "${RED}ERROR: Unknown profile '$profile'. Valid: dev, opensource${NC}"
+            exit 1
+            ;;
+    esac
+}
+
+apply_profile_defaults "$PROFILE"
+
+# resolve_config: env override > profile default (sets var + _SRC_ annotation)
+# Usage: resolve_config "VAR_NAME" — sets VAR_NAME and _SRC_VAR_NAME in current shell
+resolve_config() {
+    local var_name="$1"
+    local prof_var="_PROF_${var_name}"
+    local env_val="${!var_name}"
+    local prof_val="${!prof_var}"
+    if [ -n "$env_val" ]; then
+        eval "_SRC_${var_name}=\".env override\""
+    elif [ -n "$prof_val" ]; then
+        eval "_SRC_${var_name}=\"profile default ($PROFILE)\""
+        eval "${var_name}=\"${prof_val}\""
+    else
+        eval "_SRC_${var_name}=\"built-in default\""
+    fi
+}
+
+# print_config_summary: display each profile-aware config with its source
+print_config_summary() {
+    echo "  配置来源："
+    local key src_var val source
+    for key in ANTHROPIC_PROXY_ENABLED ASR_ENABLED TTS_ENABLED LLM_POSTPROCESS_ENABLED \
+               MESSAGE_TTL_SECONDS THREAD_TTL_SECONDS TASK_TTL_SECONDS \
+               REDIS_PROFILE; do
+        val="${!key}"
+        src_var="_SRC_${key}"
+        source="${!src_var:-built-in default}"
+        printf "    %-30s = %-10s ← %s\n" "$key" "$val" "$source"
+    done
+}
+
+# 默认端口 (not profile-dependent)
+API_PORT=${API_SERVER_PORT:-3004}
+WEB_PORT=${FRONTEND_PORT:-3003}
+REDIS_PORT=${REDIS_PORT:-$(default_redis_port)}
+normalize_raw_dev_redis_defaults
+
+# Profile-aware config resolution
+resolve_config "ANTHROPIC_PROXY_ENABLED"
+resolve_config "ASR_ENABLED"
+resolve_config "TTS_ENABLED"
+resolve_config "LLM_POSTPROCESS_ENABLED"
+resolve_config "MESSAGE_TTL_SECONDS"
+resolve_config "THREAD_TTL_SECONDS"
+resolve_config "TASK_TTL_SECONDS"
+resolve_config "REDIS_PROFILE"
+
+# Apply built-in fallbacks for vars with no profile and no env
+: "${ANTHROPIC_PROXY_ENABLED:=0}"
+: "${ASR_ENABLED:=0}"
+: "${TTS_ENABLED:=0}"
+: "${LLM_POSTPROCESS_ENABLED:=0}"
+: "${MESSAGE_TTL_SECONDS:=0}"
+: "${THREAD_TTL_SECONDS:=0}"
+: "${TASK_TTL_SECONDS:=0}"
+: "${REDIS_PROFILE:=dev}"
+: "${OFFICE_CLAW_STORAGE_PROVIDER_MODULES:=@openjiuwen/relay-storage-sqlite}"
+: "${OFFICE_CLAW_APPROVAL_RECORD_PROVIDER:=sqlite-approval-records}"
+
+default_redis_storage_key() {
+    local profile="${1:-$REDIS_PROFILE}"
+    local port="${2:-$REDIS_PORT}"
+    local default_port="${3:-6399}"
+    if [ "$port" = "$default_port" ]; then
+        printf '%s' "$profile"
+    else
+        printf '%s-%s' "$profile" "$port"
+    fi
+}
+
+default_redis_data_dir() {
+    local key
+    key=$(default_redis_storage_key "${1:-$REDIS_PROFILE}" "${2:-$REDIS_PORT}")
+    printf '%s/.office-claw/redis-%s' "$HOME" "$key"
+}
+
+default_redis_backup_dir() {
+    local key
+    key=$(default_redis_storage_key "${1:-$REDIS_PROFILE}" "${2:-$REDIS_PORT}")
+    printf '%s/.office-claw/redis-backups/%s' "$HOME" "$key"
+}
+
+REDIS_STORAGE_KEY=$(default_redis_storage_key "$REDIS_PROFILE" "$REDIS_PORT")
+if [ -n "$CLI_REDIS_DATA_DIR_OVERRIDE" ]; then
+    REDIS_DATA_DIR="$CLI_REDIS_DATA_DIR_OVERRIDE"
+elif [ -n "$CLI_REDIS_PORT_OVERRIDE" ]; then
+    REDIS_DATA_DIR="$(default_redis_data_dir "$REDIS_PROFILE" "$REDIS_PORT")"
+else
+    REDIS_DATA_DIR=${REDIS_DATA_DIR:-"$(default_redis_data_dir "$REDIS_PROFILE" "$REDIS_PORT")"}
+fi
+
+if [ -n "$CLI_REDIS_BACKUP_DIR_OVERRIDE" ]; then
+    REDIS_BACKUP_DIR="$CLI_REDIS_BACKUP_DIR_OVERRIDE"
+elif [ -n "$CLI_REDIS_PORT_OVERRIDE" ]; then
+    REDIS_BACKUP_DIR="$(default_redis_backup_dir "$REDIS_PROFILE" "$REDIS_PORT")"
+else
+    REDIS_BACKUP_DIR=${REDIS_BACKUP_DIR:-"$(default_redis_backup_dir "$REDIS_PROFILE" "$REDIS_PORT")"}
+fi
+REDIS_DBFILE=${REDIS_DBFILE:-dump.rdb}
+REDIS_PIDFILE="${REDIS_DATA_DIR}/redis-${REDIS_PORT}.pid"
+REDIS_LOGFILE="${REDIS_DATA_DIR}/redis-${REDIS_PORT}.log"
+STARTED_REDIS=false
+CLEANUP_RUNNING=false
+MANAGED_PIDS=()
+
+export MESSAGE_TTL_SECONDS THREAD_TTL_SECONDS TASK_TTL_SECONDS
+
+register_managed_pid() {
+    local pid="${1:-}"
+    local existing
+    [ -n "$pid" ] || return 0
+    for existing in "${MANAGED_PIDS[@]}"; do
+        [ "$existing" = "$pid" ] && return 0
+    done
+    MANAGED_PIDS+=("$pid")
+}
+
+probe_port_with_lsof() {
+    local port=$1
+    lsof -nP -i ":$port" -sTCP:LISTEN -t >/dev/null 2>&1
+}
+
+probe_port_with_ss() {
+    local port=$1
+    ss -ltn "( sport = :$port )" 2>/dev/null | awk 'NR > 1 { found = 1; exit } END { exit found ? 0 : 1 }'
+}
+
+probe_port_with_nc() {
+    local port=$1
+    nc -z 127.0.0.1 "$port" >/dev/null 2>&1 || nc -z localhost "$port" >/dev/null 2>&1
+}
+
+probe_port_with_dev_tcp() {
+    local port=$1
+    # Bash-only: requires net redirections support (enabled in most mainstream builds).
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1 || (exec 3<>"/dev/tcp/localhost/$port") >/dev/null 2>&1
+}
+
+port_listen_pids() {
+    local port=$1
+    local pids=""
+
+    if command -v lsof >/dev/null 2>&1; then
+        pids=$(lsof -nP -i ":$port" -sTCP:LISTEN -t 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            printf '%s\n' "$pids"
+            return 0
+        fi
+    fi
+
+    if command -v ss >/dev/null 2>&1; then
+        pids=$(ss -ltnp "( sport = :$port )" 2>/dev/null | awk '
+            {
+                while (match($0, /pid=[0-9]+/)) {
+                    print substr($0, RSTART + 4, RLENGTH - 4)
+                    $0 = substr($0, RSTART + RLENGTH)
+                }
+            }
+        ' | sort -u || true)
+        if [ -n "$pids" ]; then
+            printf '%s\n' "$pids"
+            return 0
+        fi
+    fi
+
+    if command -v fuser >/dev/null 2>&1; then
+        pids=$(fuser -n tcp "$port" 2>&1 | sed 's#^[^:]*:##' | grep -oE '[0-9]+' | sort -u || true)
+        if [ -n "$pids" ]; then
+            printf '%s\n' "$pids"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+port_is_listening() {
+    local port=$1
+
+    if command -v lsof >/dev/null 2>&1 && probe_port_with_lsof "$port"; then
+        return 0
+    fi
+    if command -v ss >/dev/null 2>&1 && probe_port_with_ss "$port"; then
+        return 0
+    fi
+    if command -v nc >/dev/null 2>&1 && probe_port_with_nc "$port"; then
+        return 0
+    fi
+    if probe_port_with_dev_tcp "$port"; then
+        return 0
+    fi
+
+    return 1
+}
+
+list_child_pids() {
+    local pid=$1
+    command -v pgrep >/dev/null 2>&1 || return 0
+    pgrep -P "$pid" 2>/dev/null || true
+}
+
+terminate_pid_tree_with_signal() {
+    local signal="$1"
+    local pid="$2"
+    local child
+
+    [ -n "$pid" ] || return 0
+    kill -0 "$pid" 2>/dev/null || return 0
+
+    while IFS= read -r child; do
+        [ -n "$child" ] || continue
+        terminate_pid_tree_with_signal "$signal" "$child"
+    done < <(list_child_pids "$pid")
+
+    kill "-$signal" "$pid" 2>/dev/null || true
+}
+
+terminate_managed_pids() {
+    local pid
+    for pid in "${MANAGED_PIDS[@]}"; do
+        terminate_pid_tree_with_signal TERM "$pid"
+    done
+    sleep 1
+    for pid in "${MANAGED_PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            terminate_pid_tree_with_signal KILL "$pid"
+        fi
+    done
+    MANAGED_PIDS=()
+}
+
+# 杀掉占用端口的进程
+kill_port() {
+    local port=$1
+    local name=$2
+    local pids
+    pids=$(port_listen_pids "$port" || true)
+    if [ -n "$pids" ]; then
+        echo -e "${YELLOW}  端口 $port ($name) 被占用，正在终止进程...${NC}"
+        echo "$pids" | xargs kill 2>/dev/null || true
+        sleep 1
+        # 确认已死
+        pids=$(port_listen_pids "$port" || true)
+        if [ -n "$pids" ]; then
+            echo -e "${YELLOW}  强制终止...${NC}"
+            echo "$pids" | xargs kill -9 2>/dev/null || true
+            sleep 1
+        fi
+        pids=$(port_listen_pids "$port" || true)
+        if [ -n "$pids" ]; then
+            echo -e "${RED}  ✗ 端口 $port 仍被占用，无法继续启动 $name${NC}"
+            return 1
+        fi
+        echo -e "${GREEN}  ✓ 端口 $port 已释放${NC}"
+    fi
+}
+
+kill_managed_ports() {
+    kill_port $API_PORT "API"
+    kill_port $WEB_PORT "Frontend"
+    if [ "${ANTHROPIC_PROXY_ENABLED:-0}" = "1" ]; then
+        [ "${ANTHROPIC_PROXY_ENABLED:-1}" != "0" ] && kill_port ${ANTHROPIC_PROXY_PORT:-9877} "Proxy"
+    fi
+    if [ "${ASR_ENABLED:-0}" = "1" ]; then
+        kill_port ${WHISPER_PORT:-9876} "ASR"
+    fi
+    if [ "${TTS_ENABLED:-0}" = "1" ]; then
+        kill_port ${TTS_PORT:-9879} "TTS"
+    fi
+    if [ "${LLM_POSTPROCESS_ENABLED:-0}" = "1" ]; then
+        kill_port ${LLM_POSTPROCESS_PORT:-9878} "LLM后修"
+    fi
+}
+
+# 轮询等待端口监听（ML 模型加载需要时间）
+# 用法: wait_for_port <port> <name> [max_seconds=15]
+wait_for_port() {
+    local port=$1
+    local name=$2
+    local max_wait=${3:-15}
+    local elapsed=0
+    while [ $elapsed -lt $max_wait ]; do
+        if port_is_listening "$port"; then
+            echo -e "${GREEN}  ✓ $name 已启动 (端口 $port, ${elapsed}s)${NC}"
+            return 0
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    echo -e "${RED}  ✗ $name 启动超时（端口 $port, ${max_wait}s 内未监听）${NC}"
+    return 1
+}
+
+wait_for_port_or_exit() {
+    local port=$1
+    local name=$2
+    local pid=$3
+    local max_wait=${4:-15}
+    local elapsed=0
+
+    while [ $elapsed -lt $max_wait ]; do
+        if port_is_listening "$port"; then
+            echo -e "${GREEN}  ✓ $name 已启动 (端口 $port, ${elapsed}s)${NC}"
+            return 0
+        fi
+
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo -e "${RED}  ✗ $name 启动失败（进程已退出，端口 $port 未监听）${NC}"
+            return 1
+        fi
+
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    echo -e "${RED}  ✗ $name 启动超时（端口 $port, ${max_wait}s 内未监听）${NC}"
+    return 1
+}
+
+# Sidecar 状态机：disabled → launching → ready | failed
+# 用法: start_sidecar <name> <state_var> <port> <timeout> <launch_cmd...>
+start_sidecar() {
+    local name="$1" state_var="$2" port="$3" timeout="$4"
+    shift 4
+    local launch_cmd="$*"
+
+    eval "${state_var}=launching"
+    echo "  启动 ${name} (端口 ${port})..."
+    background_eval_with_null_stdin "$launch_cmd"
+    if wait_for_port "$port" "$name" "$timeout"; then
+        eval "${state_var}=ready"
+    else
+        eval "${state_var}=failed"
+    fi
+}
+
+# 后台 Node dev 进程（tsx watch / vite dev）在 macOS + Node 25 下若继承 TTY stdin，
+# 可能在读取 fd0 时抛出 `TTY.onStreamRead` EIO。统一把后台任务 stdin 切到 /dev/null。
+background_eval_with_null_stdin() {
+    local launch_cmd="$1"
+    (
+        exec </dev/null
+        eval "$launch_cmd"
+    ) &
+    register_managed_pid "$!"
+}
+
+api_launch_command() {
+    local env_prefix=""
+    if [ "$DEBUG_MODE" = true ]; then
+        env_prefix="LOG_LEVEL=debug "
+    fi
+    if [ "${OFFICE_CLAW_DIRECT_NO_WATCH:-0}" = "1" ]; then
+        printf '%s' "cd $API_APP_DIR && exec ${env_prefix}pnpm run start"
+    else
+        printf '%s' "cd $API_APP_DIR && exec ${env_prefix}pnpm run dev"
+    fi
+}
+
+frontend_launch_command() {
+    # packages/web uses Vite (dev → vite, start → vite preview).
+    # FRONTEND_PORT is read by vite.config.ts; already exported by this script.
+    if [ "$PROD_WEB" = true ]; then
+        printf 'cd %s && exec pnpm run start' "$WEB_APP_DIR"
+    else
+        printf 'cd %s && exec pnpm run dev' "$WEB_APP_DIR"
+    fi
+}
+
+# Sidecar summary: ready → 地址, failed → 报告, disabled → 静默
+print_sidecar_summary_all() {
+    local name state_var port state
+    for entry in "ASR:_STATE_ASR:${ASR_PORT:-9876}" "TTS:_STATE_TTS:${TTS_PORT_VAL:-9879}" "LLM后修:_STATE_LLM_PP:${LLM_PP_PORT:-9878}" "Embedding:_STATE_EMBED:${EMBED_PORT:-9880}"; do
+        name="${entry%%:*}"
+        local rest="${entry#*:}"
+        state_var="${rest%%:*}"
+        port="${rest#*:}"
+        state="${!state_var}"
+        case "$state" in
+            ready)   echo "  - ${name}:      http://localhost:${port}" ;;
+            failed)  echo -e "  - ${name}:      ${RED:-}启动失败${NC:-}" ;;
+        esac
+    done
+}
+
+# 检查 sidecar 依赖是否存在（ENABLED=1 时调用）
+# 用法: check_sidecar_dep <name> <command>
+# 返回 0 = 存在, 1 = 缺失（并打印安装提示）
+check_sidecar_dep() {
+    local name="$1" cmd="$2"
+    if ! command -v "$cmd" &>/dev/null; then
+        echo -e "${RED:-}  ✗ ${name} 需要 ${cmd}，但未安装${NC:-}"
+        echo "    请运行: ./scripts/setup.sh 或手动安装 ${cmd}"
+        return 1
+    fi
+    return 0
+}
+
+# 清理缓存
+clean_cache() {
+    if [ "$PROD_WEB" = true ] && [ "$QUICK_MODE" = true ]; then
+        echo ""
+        echo -e "${YELLOW}保留前端产物 (--prod-web --quick)${NC}"
+        return
+    fi
+
+    echo ""
+    echo -e "${CYAN}清理缓存...${NC}"
+
+    # Vite 构建产物
+    if [ -d "$WEB_APP_DIR/dist" ]; then
+        /bin/rm -rf "$WEB_APP_DIR/dist"
+        echo -e "${GREEN}  ✓ 清理 web dist${NC}"
+    fi
+
+    # Vite 预构建缓存
+    if [ -d "$WEB_APP_DIR/node_modules/.vite" ]; then
+        /bin/rm -rf "$WEB_APP_DIR/node_modules/.vite"
+        echo -e "${GREEN}  ✓ 清理 Vite 缓存${NC}"
+    fi
+}
+
+# 清理与 pnpm 工作区冲突的 npm lockfile（会触发 Next 错误 patch 逻辑）
+sanitize_lockfiles() {
+    local web_lock="${1:-$WEB_APP_DIR/package-lock.json}"
+    if [ -f "$web_lock" ]; then
+        /bin/rm -f "$web_lock"
+        echo -e "${YELLOW}  ⚠ 已移除 $web_lock (pnpm 工作区应使用 pnpm-lock.yaml)${NC}"
+    fi
+}
+
+ensure_redis_dirs() {
+    mkdir -p "$REDIS_DATA_DIR" "$REDIS_BACKUP_DIR"
+}
+
+prune_redis_backups() {
+    local keep="${1:-20}"
+    local files=()
+    while IFS= read -r f; do
+        files+=("$f")
+    done < <(ls -1t "$REDIS_BACKUP_DIR"/"${REDIS_STORAGE_KEY}"-*.rdb 2>/dev/null || true)
+
+    if [ "${#files[@]}" -le "$keep" ]; then
+        return
+    fi
+
+    local i
+    for ((i=keep; i<${#files[@]}; i++)); do
+        /bin/rm -f "${files[$i]}"
+    done
+}
+
+archive_redis_snapshot() {
+    local reason="${1:-manual}"
+    ensure_redis_dirs
+
+    local source=""
+    local dir=""
+    local dbfile=""
+
+    if redis-cli -p "$REDIS_PORT" ping &> /dev/null; then
+        redis-cli -p "$REDIS_PORT" bgsave &> /dev/null || true
+        sleep 0.2
+        dir=$(redis-cli -p "$REDIS_PORT" config get dir 2>/dev/null | sed -n '2p' || true)
+        dbfile=$(redis-cli -p "$REDIS_PORT" config get dbfilename 2>/dev/null | sed -n '2p' || true)
+        if [ -n "$dir" ] && [ -n "$dbfile" ]; then
+            source="$dir/$dbfile"
+        fi
+    fi
+
+    if [ -z "$source" ]; then
+        source="$REDIS_DATA_DIR/$REDIS_DBFILE"
+    fi
+
+    if [ ! -f "$source" ]; then
+        return
+    fi
+
+    local stamp
+    stamp=$(date '+%Y%m%d-%H%M%S')
+    local target="$REDIS_BACKUP_DIR/${REDIS_STORAGE_KEY}-${reason}-${stamp}.rdb"
+    if cp -p "$source" "$target" 2>/dev/null || cp "$source" "$target" 2>/dev/null; then
+        echo -e "${GREEN}  ✓ Redis 快照归档: $target${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ Redis 快照归档失败，继续启动: $target${NC}"
+        return 0
+    fi
+    prune_redis_backups 20
+}
+
+print_redis_runtime_info() {
+    local dir dbfile appendonly dbsize
+    dir=$(redis-cli -p "$REDIS_PORT" config get dir 2>/dev/null | sed -n '2p' || true)
+    dbfile=$(redis-cli -p "$REDIS_PORT" config get dbfilename 2>/dev/null | sed -n '2p' || true)
+    appendonly=$(redis-cli -p "$REDIS_PORT" config get appendonly 2>/dev/null | sed -n '2p' || true)
+    dbsize=$(redis-cli -p "$REDIS_PORT" dbsize 2>/dev/null || echo "?")
+    echo "  Redis 配置:"
+    echo "    - profile:   $REDIS_PROFILE"
+    echo "    - port:      $REDIS_PORT"
+    echo "    - dbsize:    $dbsize"
+    [ -n "$dir" ] && echo "    - dir:       $dir"
+    [ -n "$dbfile" ] && echo "    - dbfilename:$dbfile"
+    [ -n "$appendonly" ] && echo "    - appendonly:$appendonly"
+}
+
+run_in_dir() {
+    local dir="$1"
+    shift
+    (
+        cd "$dir" &&
+        "$@"
+    )
+}
+
+run_logged_step() {
+    local label="$1"
+    local success_tail_lines="$2"
+    shift 2
+
+    local log_file rc
+    log_file=$(mktemp "${TMPDIR:-/tmp}/office-claw-build-XXXXXX")
+
+    if "$@" >"$log_file" 2>&1; then
+        tail -n "$success_tail_lines" "$log_file"
+        rm -f "$log_file"
+        return 0
+    else
+        rc=$?
+        echo -e "${RED}  ✗ ${label} 失败，完整日志如下：${NC}" >&2
+        cat "$log_file" >&2
+        echo -e "${RED}  日志文件: $log_file${NC}" >&2
+        return "$rc"
+    fi
+}
+
+# 构建 shared + MCP + API (tsc)；--prod-web 时额外构建 Frontend
+build_packages() {
+    echo ""
+    echo -e "${CYAN}构建 shared...${NC}"
+    run_logged_step "shared 构建" 3 run_in_dir "$PROJECT_DIR/packages/shared" pnpm run build
+    echo -e "${GREEN}  ✓ shared 构建完成${NC}"
+
+    echo ""
+    echo -e "${CYAN}构建 MCP Server...${NC}"
+    run_logged_step "MCP Server 构建" 3 run_in_dir "$PROJECT_DIR/packages/mcp-server" pnpm run build
+    echo -e "${GREEN}  ✓ MCP Server 构建完成${NC}"
+
+    echo ""
+    echo -e "${CYAN}构建 API...${NC}"
+    run_logged_step "API 构建" 3 run_in_dir "$PROJECT_DIR/$API_APP_DIR" pnpm run build
+    echo -e "${GREEN}  ✓ API 构建完成${NC}"
+
+    if [ "$PROD_WEB" = true ]; then
+        echo ""
+        echo -e "${CYAN}构建 Frontend (production)...${NC}"
+        run_logged_step "Frontend 构建" 10 run_in_dir "$PROJECT_DIR/$WEB_APP_DIR" pnpm run build
+        echo -e "${GREEN}  ✓ Frontend 构建完成 (PWA 已启用)${NC}"
+    fi
+}
+
+configure_mcp_server_path() {
+    export OFFICE_CLAW_MCP_SERVER_PATH="${OFFICE_CLAW_MCP_SERVER_PATH:-$PROJECT_DIR/packages/mcp-server/dist/index.js}"
+
+    if [ -f "$OFFICE_CLAW_MCP_SERVER_PATH" ]; then
+        echo -e "${GREEN}  ✓ MCP callback path: $OFFICE_CLAW_MCP_SERVER_PATH${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ MCP callback path 不存在: $OFFICE_CLAW_MCP_SERVER_PATH${NC}"
+        echo -e "${YELLOW}    Claude 侧将无法使用 office_claw_* MCP 工具（含权限申请）${NC}"
+    fi
+}
+
+# 检查/启动 Redis
+# USE_REDIS=true (默认): 尝试启动 Redis, 失败则回退内存
+# USE_REDIS=false (--memory): 跳过 Redis, 强制内存存储
+setup_storage() {
+    if [ "$USE_REDIS" = false ]; then
+        echo -e "${YELLOW}  ⚡ 内存模式 (--memory)，重启丢数据${NC}"
+        unset REDIS_URL
+        export MEMORY_STORE=1
+        return
+    fi
+
+    ensure_redis_dirs
+    archive_redis_snapshot "pre-start"
+
+    # 默认: 尝试 Redis 持久化 (专属端口，避免与系统 Redis 冲突)
+    if redis-cli -p "$REDIS_PORT" ping &> /dev/null; then
+        echo -e "${GREEN}  ✓ Redis 已运行 (端口 $REDIS_PORT)${NC}"
+        export REDIS_URL="redis://localhost:$REDIS_PORT"
+        print_redis_runtime_info
+        return
+    fi
+
+    echo -e "${YELLOW}  ⚠ Redis 未运行，尝试在端口 $REDIS_PORT 启动...${NC}"
+    if command -v redis-server &> /dev/null; then
+        redis-server \
+            --port "$REDIS_PORT" \
+            --bind 127.0.0.1 \
+            --dir "$REDIS_DATA_DIR" \
+            --dbfilename "$REDIS_DBFILE" \
+            --save "3600 1 300 100 60 10000" \
+            --appendonly yes \
+            --appendfilename "appendonly.aof" \
+            --appendfsync everysec \
+            --daemonize yes \
+            --pidfile "$REDIS_PIDFILE" \
+            --logfile "$REDIS_LOGFILE" \
+            >/dev/null 2>&1 || true
+        sleep 1
+        if redis-cli -p "$REDIS_PORT" ping &> /dev/null; then
+            echo -e "${GREEN}  ✓ Redis 已启动 (端口 $REDIS_PORT)${NC}"
+            export REDIS_URL="redis://localhost:$REDIS_PORT"
+            STARTED_REDIS=true
+            print_redis_runtime_info
+        else
+            echo -e "${RED}  ✗ Redis 启动失败${NC}"
+            echo -e "${RED}    使用 --memory 标志允许内存模式启动${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${RED}  ✗ Redis 未安装${NC}"
+        echo -e "${YELLOW}    安装: brew install redis${NC}"
+        echo -e "${RED}    使用 --memory 标志允许内存模式启动${NC}"
+        exit 1
+    fi
+}
+
+# 清理函数 — Ctrl+C 时杀所有子进程 + 关闭专属 Redis
+cleanup() {
+    [ "$CLEANUP_RUNNING" = true ] && return 0
+    CLEANUP_RUNNING=true
+
+    echo ""
+    echo "正在关闭服务..."
+
+    local job_pid
+    while IFS= read -r job_pid; do
+        register_managed_pid "$job_pid"
+    done <<< "$(jobs -p 2>/dev/null || true)"
+
+    terminate_managed_pids
+
+    # 关闭我们启动的专属 Redis (不影响其他 Redis 实例)
+    if [ "$USE_REDIS" = true ] && [ "$STARTED_REDIS" = true ] && redis-cli -p "$REDIS_PORT" ping &> /dev/null 2>&1; then
+        archive_redis_snapshot "pre-stop"
+        redis-cli -p "$REDIS_PORT" shutdown save &> /dev/null || true
+        echo "  Redis (端口 $REDIS_PORT) 已关闭"
+    fi
+    wait 2>/dev/null || true
+    echo "再见！🐾"
+}
+
+trap cleanup EXIT INT TERM
+
+guard_main_branch_start() {
+    if [ "${OFFICE_CLAW_ALLOW_MAIN_DEV:-0}" = "1" ]; then
+        return
+    fi
+
+    if ! command -v git >/dev/null 2>&1; then
+        return
+    fi
+
+    local branch repo_root repo_name
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+    repo_name=$(basename "${repo_root:-}")
+
+    if [ -z "$branch" ] || [ -z "$repo_root" ]; then
+        return
+    fi
+
+    if [ "$repo_name" = "office-claw" ] && [ "$branch" = "main" ]; then
+        echo ""
+        echo -e "${RED}✗ 检测到当前在 main 分支启动开发服务，已阻止。${NC}"
+        echo "  目的：避免热更新重启中断会话。"
+        echo ""
+        echo "  请改用运行态 worktree："
+        echo "    1) pnpm runtime:init"
+        echo "    2) pnpm runtime:start -- --quick"
+        echo ""
+        echo "  临时绕过（不推荐）："
+        echo "    OFFICE_CLAW_ALLOW_MAIN_DEV=1 pnpm start"
+        exit 1
+    fi
+}
+
+guard_runtime_redis_sanctuary() {
+    if [ "$USE_REDIS" = false ]; then
+        return
+    fi
+
+    if [ "$PROD_WEB" = true ]; then
+        return
+    fi
+
+    if [ "$REDIS_PORT" = "6399" ]; then
+        echo ""
+        echo -e "${RED}✗ 检测到非 runtime 启动命中 Redis production Redis (sacred)，已阻止。${NC}"
+        echo "  6399 只给 runtime/prod-web 使用。普通开发实例默认应走 6398。"
+        echo ""
+        echo "  正确路径："
+        echo "    - runtime: pnpm runtime:start"
+        echo "    - worktree/dev: REDIS_PORT=6398 pnpm start:direct"
+        echo ""
+        exit 1
+    fi
+}
+
+# 主函数
+main() {
+    guard_main_branch_start
+    guard_runtime_redis_sanctuary
+
+    # 1. 杀掉残余进程
+    echo ""
+    echo -e "${CYAN}检查端口...${NC}"
+    kill_managed_ports
+
+    if [ ! -d "$PROJECT_DIR/$API_APP_DIR" ]; then
+        echo -e "${RED}✗ API 目录不存在: $PROJECT_DIR/$API_APP_DIR${NC}"
+        exit 1
+    fi
+    if [ ! -d "$PROJECT_DIR/$WEB_APP_DIR" ]; then
+        echo -e "${RED}✗ Frontend 目录不存在: $PROJECT_DIR/$WEB_APP_DIR${NC}"
+        exit 1
+    fi
+
+    # 2. 清理缓存
+    clean_cache
+    sanitize_lockfiles
+
+    # 2.5. 自动安装依赖（worktree 等场景 node_modules 可能不存在或不完整）
+    if [ ! -x "$PROJECT_DIR/node_modules/.bin/tsc" ]; then
+        echo ""
+        echo -e "${YELLOW}检测到依赖不完整，自动安装...${NC}"
+        run_logged_step "pnpm install" 5 pnpm install --frozen-lockfile
+        echo -e "${GREEN}  ✓ 依赖安装完成${NC}"
+    fi
+
+    if [ -d "$PROJECT_DIR/office-claw-skills" ]; then
+        echo ""
+        echo -e "${CYAN}检查 Office Skills 组件...${NC}"
+        if node "$PROJECT_DIR/scripts/ensure-office-skill-node-deps.mjs" --quiet; then
+            echo -e "${GREEN}  ✓ Office Skills 组件就绪${NC}"
+        else
+            echo -e "${YELLOW}  ⚠ Office Skills 组件补装失败，继续启动主服务${NC}"
+        fi
+    fi
+
+    # 3. 构建 shared + API (除非 --quick)
+    if [ "$QUICK_MODE" = false ]; then
+        build_packages
+    else
+        echo ""
+        echo -e "${YELLOW}跳过构建 (--quick 模式)${NC}"
+    fi
+
+    # 4. 检查外部依赖
+    echo ""
+    echo -e "${CYAN}检查依赖...${NC}"
+    setup_storage
+    configure_mcp_server_path
+    echo "  数据保留 (秒): message=${MESSAGE_TTL_SECONDS} thread=${THREAD_TTL_SECONDS} task=${TASK_TTL_SECONDS}"
+    echo "  注: 0 表示永久保留（不自动过期）"
+
+    # 5. 启动服务
+    echo ""
+    echo -e "${CYAN}启动服务...${NC}"
+
+    # Anthropic API Gateway Proxy (api_key profiles auto-routed here)
+    # 默认关闭 (ANTHROPIC_PROXY_ENABLED=0)，需要反代时在 .env 设为 1
+    PROXY_PORT=${ANTHROPIC_PROXY_PORT:-9877}
+    if [ "${ANTHROPIC_PROXY_ENABLED:-0}" = "1" ]; then
+        if [ -f "scripts/anthropic-proxy.mjs" ]; then
+            echo "  启动 Anthropic Proxy (端口 $PROXY_PORT)..."
+            PROXY_UPSTREAMS="${ANTHROPIC_PROXY_UPSTREAMS_PATH:-$PROJECT_DIR/.office-claw/proxy-upstreams.json}"
+            background_eval_with_null_stdin "ANTHROPIC_PROXY_PORT=$PROXY_PORT node scripts/anthropic-proxy.mjs --port $PROXY_PORT --upstreams \"$PROXY_UPSTREAMS\""
+            PROXY_PID=$!
+            sleep 1
+            if kill -0 $PROXY_PID 2>/dev/null; then
+                echo -e "${GREEN}  ✓ Anthropic Proxy 已启动${NC}"
+            else
+                echo -e "${RED}  ✗ Anthropic Proxy 启动失败（端口 $PROXY_PORT 被占用？）${NC}"
+            fi
+        else
+            echo -e "${YELLOW}  ⚠ anthropic-proxy.mjs 未找到，跳过 Proxy${NC}"
+        fi
+    else
+        echo -e "${YELLOW}  ⚠ Anthropic Proxy 已禁用 (ANTHROPIC_PROXY_ENABLED=0)${NC}"
+    fi
+
+    # Sidecar 状态初始化
+    ASR_PORT=${WHISPER_PORT:-9876}
+    TTS_PORT_VAL=${TTS_PORT:-9879}
+    LLM_PP_PORT=${LLM_POSTPROCESS_PORT:-9878}
+    _STATE_ASR=disabled
+    _STATE_TTS=disabled
+    _STATE_LLM_PP=disabled
+    _STATE_EMBED=disabled
+
+    # Qwen3-ASR Server (语音输入 — 替代 Whisper，同端口 drop-in)
+    if [ "${ASR_ENABLED:-0}" = "1" ]; then
+        if ! check_sidecar_dep "ASR" "python3"; then
+            _STATE_ASR=failed
+        elif [ -f "scripts/qwen3-asr-server.sh" ]; then
+            start_sidecar "Qwen3-ASR" "_STATE_ASR" "$ASR_PORT" "${ASR_TIMEOUT:-30}" \
+                "WHISPER_PORT=$ASR_PORT bash scripts/qwen3-asr-server.sh"
+        elif [ -f "scripts/whisper-server.sh" ]; then
+            start_sidecar "Whisper ASR" "_STATE_ASR" "$ASR_PORT" "${ASR_TIMEOUT:-30}" \
+                "WHISPER_PORT=$ASR_PORT bash scripts/whisper-server.sh"
+        else
+            echo -e "${RED}  ✗ ASR 已启用，但脚本未找到${NC}"
+            echo "    请运行: ./scripts/setup.sh"
+            _STATE_ASR=failed
+        fi
+    fi
+
+    # TTS Server (语音合成 — Qwen3-TTS / Kokoro / edge-tts)
+    if [ "${TTS_ENABLED:-0}" = "1" ]; then
+        if ! check_sidecar_dep "TTS" "python3"; then
+            _STATE_TTS=failed
+        elif [ -f "scripts/tts-server.sh" ]; then
+            start_sidecar "TTS" "_STATE_TTS" "$TTS_PORT_VAL" "${TTS_TIMEOUT:-30}" \
+                "TTS_PORT=$TTS_PORT_VAL bash scripts/tts-server.sh"
+        else
+            echo -e "${RED}  ✗ TTS 已启用，但脚本未找到${NC}"
+            echo "    请运行: ./scripts/setup.sh"
+            _STATE_TTS=failed
+        fi
+    fi
+
+    # LLM 后修 Server (语音转写纠正 — Qwen3-4B)
+    if [ "${LLM_POSTPROCESS_ENABLED:-0}" = "1" ]; then
+        if ! check_sidecar_dep "LLM 后修" "python3"; then
+            _STATE_LLM_PP=failed
+        elif [ -f "scripts/llm-postprocess-server.sh" ]; then
+            start_sidecar "LLM 后修" "_STATE_LLM_PP" "$LLM_PP_PORT" "${LLM_TIMEOUT:-60}" \
+                "LLM_POSTPROCESS_PORT=$LLM_PP_PORT bash scripts/llm-postprocess-server.sh"
+        else
+            echo -e "${RED}  ✗ LLM 后修已启用，但脚本未找到${NC}"
+            echo "    请运行: ./scripts/setup.sh"
+            _STATE_LLM_PP=failed
+        fi
+    fi
+
+    # Embedding Server (F102 记忆系统 — Qwen3-Embedding MLX GPU)
+    if [ "${EMBED_ENABLED:-0}" = "1" ]; then
+        if ! check_sidecar_dep "Embedding" "python3"; then
+            _STATE_EMBED=failed
+        elif [ -f "scripts/embed-server.sh" ]; then
+            start_sidecar "Embedding" "_STATE_EMBED" "${EMBED_PORT:-9880}" "${EMBED_TIMEOUT:-30}" \
+                "EMBED_PORT=${EMBED_PORT:-9880} bash scripts/embed-server.sh"
+        else
+            echo -e "${RED}  ✗ Embedding 已启用，但脚本未找到${NC}"
+            echo "    请运行: ./scripts/setup.sh"
+            _STATE_EMBED=failed
+        fi
+    fi
+
+    API_LAUNCH_CMD="$(api_launch_command)"
+    if [ "${OFFICE_CLAW_DIRECT_NO_WATCH:-0}" = "1" ]; then
+        echo -e "${YELLOW}  ⚠ API 使用非 watch 模式 (OFFICE_CLAW_DIRECT_NO_WATCH=1)${NC}"
+    fi
+
+    # API Server
+    echo "  启动 API Server (端口 $API_PORT)..."
+    background_eval_with_null_stdin "$API_LAUNCH_CMD"
+    API_PID=$!
+    wait_for_port_or_exit "$API_PORT" "API Server" "$API_PID" 20 || exit 1
+
+    # Frontend
+    if [ "$PROD_WEB" = true ]; then
+        echo "  启动 Frontend (端口 $WEB_PORT, production)..."
+        if [ -d "$WEB_APP_DIR/dist" ]; then
+            background_eval_with_null_stdin "$(frontend_launch_command)"
+        else
+            echo -e "${RED}  ✗ dist 目录不存在，无法以 production 模式启动${NC}"
+            echo -e "${RED}    请先不带 --quick 运行以执行 vite build${NC}"
+            exit 1
+        fi
+    else
+        echo "  启动 Frontend (端口 $WEB_PORT, dev)..."
+        background_eval_with_null_stdin "$(frontend_launch_command)"
+    fi
+    WEB_PID=$!
+    wait_for_port_or_exit "$WEB_PORT" "Frontend" "$WEB_PID" 30 || exit 1
+
+    # 显示存储模式
+    if [ -n "$REDIS_URL" ]; then
+        STORAGE_INFO="${GREEN}Redis 持久化${NC} ($REDIS_URL)"
+    else
+        STORAGE_INFO="${YELLOW}内存模式${NC} (重启丢数据)"
+    fi
+
+    # 前端模式状态
+    if [ "$PROD_WEB" = true ]; then
+        PWA_INFO="${GREEN}production (PWA 已启用)${NC}"
+    else
+        PWA_INFO="${YELLOW}development (热重载, PWA 不可用)${NC}"
+    fi
+
+    echo ""
+    echo "========================"
+    echo -e "${GREEN}OfficeClaw 已启动${NC}"
+    [ -n "$PROFILE" ] && echo -e "  Profile: ${CYAN}${PROFILE}${NC}"
+    echo "  AuthProvider: ${OFFICE_CLAW_AUTH_PROVIDER:-no-auth}"
+    echo "  SkipAuth: OFF (OFFICE_CLAW_SKIP_AUTH=${OFFICE_CLAW_SKIP_AUTH:-0}, CAT_CAFE_SKIP_AUTH=${CAT_CAFE_SKIP_AUTH:-0})"
+    echo ""
+    print_config_summary
+    print_manual_download_source_summary
+    echo ""
+    echo "服务地址："
+    echo "  - Frontend: http://localhost:$WEB_PORT"
+    echo "  - API:      http://localhost:$API_PORT"
+    [ "${ANTHROPIC_PROXY_ENABLED:-0}" = "1" ] && echo "  - Proxy:    http://localhost:$PROXY_PORT"
+    print_sidecar_summary_all
+    echo -e "  - 前端模式: $PWA_INFO"
+    echo -e "  - 存储:     $STORAGE_INFO"
+    echo ""
+    echo "按 Ctrl+C 停止所有服务"
+    echo ""
+
+    # 等待所有后台进程
+    wait
+}
+
+# Allow sourcing for testing without executing main
+[[ "${1:-}" == "--source-only" ]] && { return 0 2>/dev/null; exit 0; }
+main "$@"

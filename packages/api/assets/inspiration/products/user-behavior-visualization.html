@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户行为分析仪表盘</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/map/js/china.js"></script>
+<style>
+  :root {
+    --bg-primary: #0f1923;
+    --bg-card: #162736;
+    --bg-card-hover: #1a3042;
+    --border: #1e3a50;
+    --text-primary: #e8edf2;
+    --text-secondary: #8b9db5;
+    --text-muted: #5a6f87;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-orange: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --glow-blue: rgba(59,130,246,0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Header */
+  .dashboard-header {
+    background: linear-gradient(135deg, #0f1923 0%, #162736 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(12px);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .header-icon {
+    width: 40px; height: 40px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    box-shadow: 0 4px 12px rgba(59,130,246,0.3);
+  }
+
+  .header-title {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(90deg, #e8edf2, #8b9db5);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .header-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .time-range-btn {
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .time-range-btn:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+  }
+
+  .time-range-btn.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+  }
+
+  .live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--accent-green);
+  }
+
+  .live-dot {
+    width: 8px; height: 8px;
+    background: var(--accent-green);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  /* KPI Strip */
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    padding: 20px 32px;
+  }
+
+  .kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    transition: all 0.3s;
+    cursor: default;
+  }
+
+  .kpi-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-blue);
+    box-shadow: 0 4px 20px var(--glow-blue);
+    transform: translateY(-2px);
+  }
+
+  .kpi-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  .kpi-value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -1px;
+  }
+
+  .kpi-change {
+    font-size: 12px;
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .kpi-change.up { color: var(--accent-green); }
+  .kpi-change.down { color: var(--accent-red); }
+
+  /* Main Grid */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 0 32px 32px;
+  }
+
+  .chart-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+
+  .chart-card:hover {
+    border-color: rgba(59,130,246,0.3);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  .chart-header {
+    padding: 18px 22px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .chart-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .chart-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+
+  .chart-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .chart-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .chart-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .chart-action-btn {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .chart-action-btn:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+  }
+
+  .chart-body {
+    padding: 8px 12px 12px;
+    height: 380px;
+  }
+
+  .chart-card.full-width {
+    grid-column: 1 / -1;
+  }
+
+  .chart-card.full-width .chart-body {
+    height: 420px;
+  }
+
+  /* Tooltip custom */
+  .custom-tooltip {
+    background: rgba(22,39,54,0.95) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    padding: 10px 14px !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-primary); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Responsive */
+  @media (max-width: 1200px) {
+    .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+    .dashboard-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .kpi-strip { grid-template-columns: repeat(2, 1fr); padding: 16px; }
+    .dashboard-grid { padding: 0 16px 16px; }
+    .dashboard-header { padding: 16px; }
+    .header-right { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="dashboard-header">
+  <div class="header-left">
+    <div class="header-icon">&#9678;</div>
+    <div>
+      <div class="header-title">用户行为分析仪表盘</div>
+      <div class="header-subtitle">User Behavior Analytics Dashboard</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="time-range-btn" onclick="switchRange(this,'7d')">近7天</button>
+    <button class="time-range-btn active" onclick="switchRange(this,'30d')">近30天</button>
+    <button class="time-range-btn" onclick="switchRange(this,'90d')">近90天</button>
+    <div class="live-indicator">
+      <span class="live-dot"></span>
+      实时更新
+    </div>
+  </div>
+</div>
+
+<!-- KPI Strip -->
+<div class="kpi-strip">
+  <div class="kpi-card">
+    <div class="kpi-label">日活用户 DAU</div>
+    <div class="kpi-value" style="color:var(--accent-blue)">128,456</div>
+    <div class="kpi-change up">&#9650; 12.3% 较昨日</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">新增用户</div>
+    <div class="kpi-value" style="color:var(--accent-cyan)">8,732</div>
+    <div class="kpi-change up">&#9650; 5.7% 较昨日</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">平均时长</div>
+    <div class="kpi-value" style="color:var(--accent-green)">6m42s</div>
+    <div class="kpi-change up">&#9650; 3.1% 较昨日</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">转化率</div>
+    <div class="kpi-value" style="color:var(--accent-orange)">4.28%</div>
+    <div class="kpi-change down">&#9660; 0.3% 较昨日</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">次日留存</div>
+    <div class="kpi-value" style="color:var(--accent-purple)">38.6%</div>
+    <div class="kpi-change up">&#9650; 1.2% 较昨日</div>
+  </div>
+</div>
+
+<!-- Charts Grid -->
+<div class="dashboard-grid">
+
+  <!-- 1. Funnel Chart -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title-group">
+        <div class="chart-icon" style="background:rgba(59,130,246,0.15);color:var(--accent-blue)">&#9660;</div>
+        <div>
+          <div class="chart-title">转化漏斗</div>
+          <div class="chart-desc">用户核心路径转化率</div>
+        </div>
+      </div>
+      <div class="chart-actions">
+        <button class="chart-action-btn" title="切换为横向" onclick="toggleFunnel()">&#8644;</button>
+      </div>
+    </div>
+    <div class="chart-body" id="funnelChart"></div>
+  </div>
+
+  <!-- 2. Heatmap -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title-group">
+        <div class="chart-icon" style="background:rgba(245,158,11,0.15);color:var(--accent-orange)">&#9638;</div>
+        <div>
+          <div class="chart-title">活跃热力图</div>
+          <div class="chart-desc">按星期 x 小时分布的用户活跃度</div>
+        </div>
+      </div>
+      <div class="chart-actions">
+        <button class="chart-action-btn" title="切换色系" onclick="toggleHeatmapTheme()">&#9788;</button>
+      </div>
+    </div>
+    <div class="chart-body" id="heatmapChart"></div>
+  </div>
+
+  <!-- 3. Retention Curve -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title-group">
+        <div class="chart-icon" style="background:rgba(139,92,246,0.15);color:var(--accent-purple)">&#9733;</div>
+        <div>
+          <div class="chart-title">留存曲线</div>
+          <div class="chart-desc">新用户多周期留存趋势</div>
+        </div>
+      </div>
+      <div class="chart-actions">
+        <button class="chart-action-btn" title="切换队列" onclick="toggleRetentionCohort()">&#8635;</button>
+      </div>
+    </div>
+    <div class="chart-body" id="retentionChart"></div>
+  </div>
+
+  <!-- 4. Geographic Distribution -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title-group">
+        <div class="chart-icon" style="background:rgba(16,185,129,0.15);color:var(--accent-green)">&#9827;</div>
+        <div>
+          <div class="chart-title">地域分布</div>
+          <div class="chart-desc">用户地理分布与密度</div>
+        </div>
+      </div>
+      <div class="chart-actions">
+        <button class="chart-action-btn" title="切换视图" onclick="toggleMapView()">&#9673;</button>
+      </div>
+    </div>
+    <div class="chart-body" id="geoChart"></div>
+  </div>
+
+  <!-- 5. Session Depth Distribution (bonus) -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title-group">
+        <div class="chart-icon" style="background:rgba(6,182,212,0.15);color:var(--accent-cyan)">&#9679;</div>
+        <div>
+          <div class="chart-title">会话深度分布</div>
+          <div class="chart-desc">单次访问页面浏览数分布</div>
+        </div>
+      </div>
+    </div>
+    <div class="chart-body" id="sessionChart"></div>
+  </div>
+
+  <!-- 6. Device & Channel (bonus) -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title-group">
+        <div class="chart-icon" style="background:rgba(239,68,68,0.15);color:var(--accent-red)">&#9700;</div>
+        <div>
+          <div class="chart-title">设备与渠道</div>
+          <div class="chart-desc">终端类型与获客渠道占比</div>
+        </div>
+      </div>
+    </div>
+    <div class="chart-body" id="deviceChart"></div>
+  </div>
+
+</div>
+
+<script>
+// ==================== Global Config ====================
+const COLORS = {
+  blue: '#3b82f6', cyan: '#06b6d4', green: '#10b981',
+  orange: '#f59e0b', red: '#ef4444', purple: '#8b5cf6',
+  pink: '#ec4899', teal: '#14b8a6'
+};
+const GRADIENT = (c1, c2) => new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:c1},{offset:1,color:c2}]);
+
+// ==================== 1. Funnel Chart ====================
+let funnelHorizontal = false;
+const funnelInstance = echarts.init(document.getElementById('funnelChart'));
+
+function renderFunnel() {
+  const data = [
+    { value: 100, name: '访问落地页', count: '128,456' },
+    { value: 72,  name: '注册/登录',  count: '92,489' },
+    { value: 48,  name: '激活使用',   count: '61,659' },
+    { value: 26,  name: '首次付费',   count: '33,399' },
+    { value: 15,  name: '复购留存',   count: '19,268' },
+  ];
+
+  funnelInstance.setOption({
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(22,39,54,0.95)',
+      borderColor: '#1e3a50',
+      textStyle: { color: '#e8edf2', fontSize: 13 },
+      formatter: p => `<b>${p.name}</b><br/>用户量: ${p.data.count}<br/>转化率: ${p.value}%`
+    },
+    series: [{
+      type: 'funnel',
+      left: '10%', right: '10%', top: 20, bottom: 20,
+      width: '80%',
+      orient: funnelHorizontal ? 'horizontal' : 'vertical',
+      sort: 'descending',
+      gap: 6,
+      label: {
+        show: true, position: 'inside',
+        formatter: p => `${p.name}\n${p.data.count} (${p.value}%)`,
+        fontSize: 13, fontWeight: 600, color: '#fff',
+        lineHeight: 20
+      },
+      itemStyle: {
+        borderColor: 'rgba(0,0,0,0.1)', borderWidth: 1
+      },
+      emphasis: {
+        label: { fontSize: 14 },
+        itemStyle: { shadowBlur: 20, shadowColor: 'rgba(59,130,246,0.4)' }
+      },
+      data: data,
+      color: [COLORS.blue, COLORS.cyan, COLORS.green, COLORS.orange, COLORS.purple]
+    }]
+  });
+}
+renderFunnel();
+
+function toggleFunnel() {
+  funnelHorizontal = !funnelHorizontal;
+  renderFunnel();
+}
+
+// ==================== 2. Heatmap ====================
+const heatmapInstance = echarts.init(document.getElementById('heatmapChart'));
+let heatmapTheme = 'warm';
+
+function generateHeatData() {
+  const hours = Array.from({length:24}, (_,i) => `${i}:00`);
+  const days = ['周一','周二','周三','周四','周五','周六','周日'];
+  const data = [];
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      // Simulate realistic pattern: higher during work hours, lower at night
+      let base = 20;
+      if (h >= 9 && h <= 12) base = 70 + Math.random()*30;
+      else if (h >= 14 && h <= 18) base = 60 + Math.random()*30;
+      else if (h >= 19 && h <= 22) base = 50 + Math.random()*25;
+      else if (h >= 0 && h <= 6) base = 5 + Math.random()*10;
+      else base = 25 + Math.random()*20;
+      // Weekend boost for evening
+      if (d >= 5 && h >= 10 && h <= 22) base *= 1.3;
+      data.push([h, d, Math.round(base)]);
+    }
+  }
+  return { hours, days, data };
+}
+
+function renderHeatmap() {
+  const { hours, days, data } = generateHeatData();
+  const inRange = heatmapTheme === 'warm'
+    ? { color: ['#0f1923','#1a3a5c','#2d6a9f','#f59e0b','#ef4444'] }
+    : { color: ['#0f1923','#0d3b66','#14b8a6','#3b82f6','#8b5cf6'] };
+
+  heatmapInstance.setOption({
+    tooltip: {
+      backgroundColor: 'rgba(22,39,54,0.95)',
+      borderColor: '#1e3a50',
+      textStyle: { color: '#e8edf2', fontSize: 13 },
+      formatter: p => `${days[p.value[1]]} ${hours[p.value[0]]}<br/>活跃指数: <b>${p.value[2]}</b>`
+    },
+    grid: { left: 60, right: 30, top: 10, bottom: 50 },
+    xAxis: {
+      type: 'category', data: hours, splitArea: { show: false },
+      axisLabel: { color: '#5a6f87', fontSize: 10, interval: 2 },
+      axisLine: { lineStyle: { color: '#1e3a50' } }
+    },
+    yAxis: {
+      type: 'category', data: days, splitArea: { show: false },
+      axisLabel: { color: '#8b9db5', fontSize: 12 },
+      axisLine: { lineStyle: { color: '#1e3a50' } }
+    },
+    visualMap: {
+      min: 0, max: 100, show: false, inRange
+    },
+    series: [{
+      type: 'heatmap', data, emphasis: {
+        itemStyle: { shadowBlur: 12, shadowColor: 'rgba(59,130,246,0.5)' }
+      },
+      itemStyle: { borderColor: '#0f1923', borderWidth: 2, borderRadius: 3 }
+    }]
+  });
+}
+renderHeatmap();
+
+function toggleHeatmapTheme() {
+  heatmapTheme = heatmapTheme === 'warm' ? 'cool' : 'warm';
+  renderHeatmap();
+}
+
+// ==================== 3. Retention Curve ====================
+const retentionInstance = echarts.init(document.getElementById('retentionChart'));
+let cohortIndex = 0;
+
+const cohorts = [
+  { label: '2026年4月', data: [100,38.6,28.2,22.1,18.5,15.8,13.9,12.4,11.2,10.1,9.3,8.6] },
+  { label: '2026年3月', data: [100,35.2,24.8,19.3,15.9,13.4,11.6,10.2,9.1,8.2,7.5,6.9] },
+  { label: '2026年2月', data: [100,40.1,30.5,24.7,20.8,17.9,15.8,14.1,12.7,11.5,10.5,9.7] },
+];
+
+function renderRetention() {
+  const days = ['D0','D1','D3','D7','D14','D21','D30','D45','D60','D75','D90','D120'];
+  const series = cohorts.map((c, i) => ({
+    name: c.label,
+    type: 'line',
+    data: c.data,
+    smooth: true,
+    symbol: 'circle',
+    symbolSize: 6,
+    lineStyle: { width: i === cohortIndex ? 3 : 1.5 },
+    itemStyle: { borderWidth: 2 },
+    areaStyle: i === cohortIndex ? {
+      color: new echarts.graphic.LinearGradient(0,0,0,1,[
+        {offset:0, color: i===0?'rgba(139,92,246,0.25)':i===1?'rgba(59,130,246,0.25)':'rgba(16,185,129,0.25)'},
+        {offset:1, color: 'rgba(0,0,0,0)'}
+      ])
+    } : null,
+    z: i === cohortIndex ? 10 : 1
+  }));
+
+  retentionInstance.setOption({
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(22,39,54,0.95)',
+      borderColor: '#1e3a50',
+      textStyle: { color: '#e8edf2', fontSize: 13 },
+      formatter: ps => {
+        let s = `<b>${ps[0].axisValue}</b><br/>`;
+        ps.forEach(p => s += `${p.seriesName}: <b>${p.value}%</b><br/>`);
+        return s;
+      }
+    },
+    legend: {
+      top: 0, right: 0,
+      textStyle: { color: '#8b9db5', fontSize: 11 },
+      itemWidth: 16, itemHeight: 3
+    },
+    grid: { left: 50, right: 20, top: 35, bottom: 35 },
+    xAxis: {
+      type: 'category', data: days, boundaryGap: false,
+      axisLabel: { color: '#5a6f87', fontSize: 11 },
+      axisLine: { lineStyle: { color: '#1e3a50' } }
+    },
+    yAxis: {
+      type: 'value', min: 0, max: 100,
+      axisLabel: { color: '#5a6f87', fontSize: 11, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: '#1e3a50', type: 'dashed' } }
+    },
+    color: [COLORS.purple, COLORS.blue, COLORS.green],
+    series
+  });
+}
+renderRetention();
+
+function toggleRetentionCohort() {
+  cohortIndex = (cohortIndex + 1) % cohorts.length;
+  renderRetention();
+}
+
+// ==================== 4. Geographic Distribution ====================
+const geoInstance = echarts.init(document.getElementById('geoChart'));
+let mapView = 'scatter';
+
+const geoData = [
+  {name:'北京',value:[116.46,39.92,28456]},{name:'上海',value:[121.48,31.22,25678]},
+  {name:'广州',value:[113.23,23.16,19834]},{name:'深圳',value:[114.07,22.62,18562]},
+  {name:'杭州',value:[120.19,30.26,14287]},{name:'成都',value:[104.06,30.67,13546]},
+  {name:'武汉',value:[114.31,30.52,11234]},{name:'南京',value:[118.78,32.04,10876]},
+  {name:'重庆',value:[106.54,29.59,9845]},{name:'西安',value:[108.95,34.27,8765]},
+  {name:'苏州',value:[120.62,31.32,7654]},{name:'天津',value:[117.20,39.13,7234]},
+  {name:'郑州',value:[113.65,34.76,6543]},{name:'长沙',value:[112.94,28.23,6123]},
+  {name:'东莞',value:[113.75,23.04,5876]},{name:'沈阳',value:[123.38,41.80,5234]},
+  {name:'青岛',value:[120.33,36.07,4987]},{name:'昆明',value:[102.73,25.04,4567]},
+  {name:'合肥',value:[117.27,31.86,4321]},{name:'厦门',value:[118.10,24.46,3987]},
+  {name:'大连',value:[121.62,38.92,3654]},{name:'济南',value:[117.00,36.65,3432]},
+  {name:'福州',value:[119.30,26.08,3210]},{name:'哈尔滨',value:[126.63,45.75,2876]},
+  {name:'南宁',value:[108.33,22.84,2654]},{name:'贵阳',value:[106.71,26.57,2432]},
+  {name:'兰州',value:[103.73,36.03,1987]},{name:'乌鲁木齐',value:[87.68,43.77,1543]},
+  {name:'拉萨',value:[91.11,29.97,432]},{name:'海口',value:[110.35,20.02,1876]},
+];
+
+const mapValueData = [
+  {name:'北京',value:28456},{name:'上海',value:25678},{name:'广东',value:38396},
+  {name:'浙江',value:14287},{name:'四川',value:13546},{name:'湖北',value:11234},
+  {name:'江苏',value:18530},{name:'重庆',value:9845},{name:'陕西',value:8765},
+  {name:'天津',value:7234},{name:'河南',value:6543},{name:'湖南',value:6123},
+  {name:'辽宁',value:5234},{name:'山东',value:8419},{name:'云南',value:4567},
+  {name:'安徽',value:4321},{name:'福建',value:7197},{name:'黑龙江',value:2876},
+  {name:'广西',value:2654},{name:'贵州',value:2432},{name:'甘肃',value:1987},
+  {name:'新疆',value:1543},{name:'西藏',value:432},{name:'海南',value:1876},
+  {name:'河北',value:5678},{name:'山西',value:3456},{name:'吉林',value:2345},
+  {name:'江西',value:3789},{name:'内蒙古',value:2123},{name:'宁夏',value:987},
+  {name:'青海',value:654},{name:'台湾',value:1234},{name:'香港',value:3456},
+  {name:'澳门',value:567},{name:'南海诸岛',value:0},
+];
+
+function renderGeo() {
+  if (mapView === 'scatter') {
+    geoInstance.setOption({
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: 'rgba(22,39,54,0.95)',
+        borderColor: '#1e3a50',
+        textStyle: { color: '#e8edf2', fontSize: 13 },
+        formatter: p => p.name + '<br/>用户量: <b>' + p.value[2].toLocaleString() + '</b>'
+      },
+      geo: {
+        map: 'china', roam: true, zoom: 1.2,
+        label: { show: false },
+        itemStyle: {
+          areaColor: '#162736', borderColor: '#1e3a50', borderWidth: 1
+        },
+        emphasis: {
+          itemStyle: { areaColor: '#1a3042' },
+          label: { show: true, color: '#8b9db5', fontSize: 11 }
+        }
+      },
+      series: [{
+        type: 'effectScatter',
+        coordinateSystem: 'geo',
+        data: geoData,
+        symbolSize: v => Math.max(6, Math.sqrt(v[2]) / 3),
+        showEffectOn: 'render',
+        rippleEffect: { brushType: 'stroke', scale: 3, period: 4 },
+        label: {
+          show: true, position: 'right', formatter: '{b}',
+          color: '#8b9db5', fontSize: 10
+        },
+        itemStyle: { color: COLORS.green, shadowBlur: 10, shadowColor: 'rgba(16,185,129,0.5)' },
+        zlevel: 1
+      }]
+    });
+  } else {
+    geoInstance.setOption({
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: 'rgba(22,39,54,0.95)',
+        borderColor: '#1e3a50',
+        textStyle: { color: '#e8edf2', fontSize: 13 },
+        formatter: p => p.name + '<br/>用户量: <b>' + (p.value||0).toLocaleString() + '</b>'
+      },
+      visualMap: {
+        min: 0, max: 40000, show: true, left: 10, bottom: 20,
+        text: ['高','低'], textStyle: { color: '#5a6f87', fontSize: 10 },
+        inRange: { color: ['#162736','#0d3b66','#1a6b5a','#10b981','#f59e0b'] },
+        itemWidth: 10, itemHeight: 100
+      },
+      series: [{
+        type: 'map', map: 'china', roam: true, zoom: 1.2,
+        data: mapValueData,
+        label: { show: false },
+        itemStyle: {
+          areaColor: '#162736', borderColor: '#1e3a50', borderWidth: 0.5
+        },
+        emphasis: {
+          label: { show: true, color: '#e8edf2', fontSize: 12 },
+          itemStyle: { areaColor: '#1a3042' }
+        }
+      }]
+    }, true);
+  }
+}
+renderGeo();
+
+function toggleMapView() {
+  mapView = mapView === 'scatter' ? 'choropleth' : 'scatter';
+  geoInstance.clear();
+  renderGeo();
+}
+
+// ==================== 5. Session Depth ====================
+const sessionInstance = echarts.init(document.getElementById('sessionChart'));
+
+const sessionData = [
+  {name:'1页',value:18.2},{name:'2页',value:22.5},{name:'3页',value:16.8},
+  {name:'4-5页',value:15.3},{name:'6-9页',value:12.1},{name:'10-19页',value:8.9},
+  {name:'20-49页',value:4.5},{name:'50+页',value:1.7}
+];
+
+sessionInstance.setOption({
+  tooltip: {
+    trigger: 'axis',
+    backgroundColor: 'rgba(22,39,54,0.95)',
+    borderColor: '#1e3a50',
+    textStyle: { color: '#e8edf2', fontSize: 13 },
+    formatter: ps => `${ps[0].name}<br/>占比: <b>${ps[0].value}%</b>`
+  },
+  grid: { left: 50, right: 20, top: 15, bottom: 35 },
+  xAxis: {
+    type: 'category', data: sessionData.map(d=>d.name),
+    axisLabel: { color: '#5a6f87', fontSize: 11 },
+    axisLine: { lineStyle: { color: '#1e3a50' } }
+  },
+  yAxis: {
+    type: 'value',
+    axisLabel: { color: '#5a6f87', fontSize: 11, formatter: '{value}%' },
+    splitLine: { lineStyle: { color: '#1e3a50', type: 'dashed' } }
+  },
+  series: [{
+    type: 'bar', data: sessionData.map(d=>d.value),
+    barWidth: '55%',
+    itemStyle: {
+      borderRadius: [4,4,0,0],
+      color: new echarts.graphic.LinearGradient(0,0,0,1,[
+        {offset:0,color:COLORS.cyan},{offset:1,color:'rgba(6,182,212,0.3)'}
+      ])
+    },
+    emphasis: {
+      itemStyle: { shadowBlur: 12, shadowColor: 'rgba(6,182,212,0.4)' }
+    },
+    label: {
+      show: true, position: 'top', color: '#8b9db5', fontSize: 11,
+      formatter: '{c}%'
+    }
+  }]
+});
+
+// ==================== 6. Device & Channel ====================
+const deviceInstance = echarts.init(document.getElementById('deviceChart'));
+
+deviceInstance.setOption({
+  tooltip: {
+    trigger: 'item',
+    backgroundColor: 'rgba(22,39,54,0.95)',
+    borderColor: '#1e3a50',
+    textStyle: { color: '#e8edf2', fontSize: 13 },
+    formatter: '{b}: {d}%'
+  },
+  legend: [
+    {
+      orient: 'vertical', right: 10, top: 'center',
+      textStyle: { color: '#8b9db5', fontSize: 11 },
+      itemWidth: 10, itemHeight: 10, itemGap: 8,
+      data: ['自然搜索','社交媒体','付费广告','邮件营销','直接访问','推荐引流']
+    }
+  ],
+  series: [
+    {
+      name: '设备类型', type: 'pie',
+      radius: ['20%','42%'], center: ['30%','50%'],
+      label: { show: true, color: '#8b9db5', fontSize: 11, formatter: '{b}\n{d}%' },
+      labelLine: { lineStyle: { color: '#1e3a50' } },
+      data: [
+        {value:52,name:'iOS',itemStyle:{color:COLORS.blue}},
+        {value:33,name:'Android',itemStyle:{color:COLORS.green}},
+        {value:12,name:'Desktop',itemStyle:{color:COLORS.orange}},
+        {value:3,name:'Other',itemStyle:{color:COLORS.purple}}
+      ],
+      emphasis: { scaleSize: 6 }
+    },
+    {
+      name: '获客渠道', type: 'pie',
+      radius: ['20%','42%'], center: ['72%','50%'],
+      label: { show: true, color: '#8b9db5', fontSize: 11, formatter: '{b}\n{d}%' },
+      labelLine: { lineStyle: { color: '#1e3a50' } },
+      data: [
+        {value:28,name:'自然搜索',itemStyle:{color:COLORS.cyan}},
+        {value:24,name:'社交媒体',itemStyle:{color:COLORS.pink}},
+        {value:22,name:'付费广告',itemStyle:{color:COLORS.orange}},
+        {value:12,name:'邮件营销',itemStyle:{color:COLORS.purple}},
+        {value:8,name:'直接访问',itemStyle:{color:COLORS.green}},
+        {value:6,name:'推荐引流',itemStyle:{color:COLORS.teal}}
+      ],
+      emphasis: { scaleSize: 6 }
+    }
+  ]
+});
+
+// ==================== Resize Handler ====================
+window.addEventListener('resize', () => {
+  [funnelInstance, heatmapInstance, retentionInstance, geoInstance, sessionInstance, deviceInstance]
+    .forEach(c => c.resize());
+});
+
+// ==================== Time Range Switcher ====================
+function switchRange(btn, range) {
+  document.querySelectorAll('.time-range-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Simulate data refresh with animation
+  [funnelInstance, heatmapInstance, retentionInstance, geoInstance, sessionInstance, deviceInstance]
+    .forEach(c => {
+      c.showLoading({ text: '', color: COLORS.blue, maskColor: 'rgba(15,25,35,0.6)' });
+    });
+  setTimeout(() => {
+    renderFunnel();
+    renderHeatmap();
+    renderRetention();
+    renderGeo();
+    [funnelInstance, heatmapInstance, retentionInstance, geoInstance, sessionInstance, deviceInstance]
+      .forEach(c => c.hideLoading());
+  }, 600);
+}
+</script>
+</body>
+</html>

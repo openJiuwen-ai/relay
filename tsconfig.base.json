@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@openjiuwen/relay-api-server-contracts": ["packages/plugin/api/dist/index.d.ts"],
+      "@openjiuwen/relay-api-server-contracts/auth": ["packages/plugin/api/dist/auth.d.ts"],
+      "@openjiuwen/relay-api-server-contracts/runtime-env": ["packages/plugin/api/dist/runtime-env.d.ts"],
+      "@openjiuwen/relay-api-server-contracts/*": ["packages/plugin/api/dist/*"]
+    },
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": false,
+    "exactOptionalPropertyTypes": false
+  }
+}

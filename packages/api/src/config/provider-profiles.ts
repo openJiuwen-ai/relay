@@ -1,0 +1,1762 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+import { randomUUID } from 'node:crypto';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { dirname, relative, resolve, sep } from 'node:path';
+import type {
+  ACPModelAccessMode,
+  AnthropicRuntimeProfile,
+  BootstrapBinding,
+  BootstrapBindings,
+  BuiltinAccountClient,
+  CreateProviderProfileInput,
+  NormalizedState,
+  ProviderProfileAuthType,
+  ProviderProfileKind,
+  ProviderProfileMeta,
+  ProviderProfileMode,
+  ProviderProfileProtocol,
+  ProviderProfileProvider,
+  ProviderProfilesMetaFile,
+  ProviderProfilesSecretsFile,
+  ProviderProfilesView,
+  ProviderProfileView,
+  RuntimeProviderProfile,
+  UpdateProviderProfileInput,
+} from './provider-profiles.types.js';
+import {
+  detectProjectLocalProfiles,
+  listProviderProfilesProjectRoots,
+  markProjectRootMigrated,
+  registerProjectRoot,
+  resolveProviderProfilesRoot,
+  resolveProviderProfilesRootSync,
+} from './provider-profiles-root.js';
+import { normalizeACPEnvEntries } from './acp-env.js';
+import {
+  buildProviderProfileApiKeyRef,
+  buildProviderProfileEnvRef,
+  decodeProviderProfileEnvSecret,
+  deleteSecretRef,
+  encodeProviderProfileEnvSecret,
+  isLocalSecretStorageEnabled,
+  preloadSecretRefs,
+  readSecretRef,
+  writeSecretRef,
+} from './local-secret-store.js';
+
+export type {
+  ACPModelAccessMode,
+  AnthropicRuntimeProfile,
+  BootstrapBinding,
+  BootstrapBindings,
+  BuiltinAccountClient,
+  CreateProviderProfileInput,
+  ProviderProfileAuthType,
+  ProviderProfileKind,
+  ProviderProfileMeta,
+  ProviderProfileMode,
+  ProviderProfileProtocol,
+  ProviderProfileProvider,
+  ProviderProfilesView,
+  ProviderProfileView,
+  RuntimeProviderProfile,
+  UpdateProviderProfileInput,
+} from './provider-profiles.types.js';
+
+const OFFICE_CLAW_DIR = '.office-claw';
+const META_FILENAME = 'provider-profiles.json';
+const SECRETS_FILENAME = 'provider-profiles.secrets.local.json';
+
+const BUILTIN_ACCOUNT_SPECS = [
+  {
+    id: 'claude',
+    displayName: 'Claude (OAuth)',
+    client: 'anthropic',
+    models: [
+      'claude-opus-4-6[1m]',
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+      'claude-opus-4-5-20251101',
+      'claude-sonnet-4-5-20250929',
+    ],
+  },
+  {
+    id: 'codex',
+    displayName: 'Codex (OAuth)',
+    client: 'openai',
+    models: ['gpt-5.3-codex', 'gpt-5.4', 'gpt-5.3-codex-spark', 'codex'],
+  },
+  {
+    id: 'gemini',
+    displayName: 'Gemini (OAuth)',
+    client: 'google',
+    models: ['gemini-3.1-pro-preview', 'gemini-2.5-pro'],
+  },
+  { id: 'dare', displayName: 'Dare (client-auth)', client: 'dare', models: ['z-ai/glm-5'] },
+  {
+    id: 'opencode',
+    displayName: 'OpenCode (client-auth)',
+    client: 'opencode',
+    models: ['anthropic/claude-opus-4-6', 'anthropic/claude-sonnet-4-5'],
+  },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  displayName: string;
+  client: BuiltinAccountClient;
+  models: string[];
+}>;
+
+const BUILTIN_CLIENT_IDS = Object.fromEntries(BUILTIN_ACCOUNT_SPECS.map((spec) => [spec.client, spec.id])) as Record<
+  BuiltinAccountClient,
+  string
+>;
+
+const LEGACY_BUILTIN_ID_MAP: Record<string, BuiltinAccountClient> = {
+  'claude-oauth': 'anthropic',
+  'codex-oauth': 'openai',
+  'gemini-oauth': 'google',
+};
+
+const CLIENT_PROTOCOL_MAP: Partial<Record<BuiltinAccountClient, ProviderProfileProtocol>> = {
+  anthropic: 'anthropic',
+  openai: 'openai',
+  google: 'google',
+  dare: 'openai',
+  opencode: 'anthropic',
+};
+
+const DEFAULT_BOOTSTRAP_CLIENTS: BuiltinAccountClient[] = ['anthropic', 'openai', 'google', 'dare'];
+const ALL_BUILTIN_CLIENTS = BUILTIN_ACCOUNT_SPECS.map((spec) => spec.client) as BuiltinAccountClient[];
+const providerStoreLocks = new Map<string, Promise<void>>();
+const VOLATILE_PROVIDER_PROFILE_API_KEY_REF_PREFIX = 'memory://provider-profiles/';
+const volatileProviderProfileApiKeys = new Map<string, string>();
+
+async function withStorageRootLock<T>(storageRoot: string, action: () => Promise<T>): Promise<T> {
+  const previous = providerStoreLocks.get(storageRoot) ?? Promise.resolve();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const running = previous.then(() => gate);
+  providerStoreLocks.set(storageRoot, running);
+  await previous;
+  try {
+    return await action();
+  } finally {
+    release();
+    if (providerStoreLocks.get(storageRoot) === running) {
+      providerStoreLocks.delete(storageRoot);
+    }
+  }
+}
+
+async function withProviderStoreLock<T>(projectRoot: string, action: (storageRoot: string) => Promise<T>): Promise<T> {
+  const storageRoot = await resolveProviderProfilesRoot(projectRoot);
+  registerProjectRoot(projectRoot);
+  return withStorageRootLock(storageRoot, async () => {
+    const localRoot = detectProjectLocalProfiles(projectRoot);
+    if (localRoot) {
+      await migrateProjectLocalToGlobal(localRoot, storageRoot);
+    }
+    return action(storageRoot);
+  });
+}
+
+type LegacyProviderProfilesMetaFileV1 = {
+  version: 1;
+  providers?: {
+    anthropic?: {
+      activeProfileId: string | null;
+      profiles: Array<{
+        id: string;
+        provider?: string;
+        name?: string;
+        displayName?: string;
+        mode?: ProviderProfileMode;
+        authType?: ProviderProfileAuthType;
+        baseUrl?: string;
+        createdAt?: string;
+        updatedAt?: string;
+      }>;
+    };
+  };
+};
+
+type LegacyProviderProfilesMetaFileV2 = {
+  version: 2;
+  activeProfileId?: string | null;
+  activeProfileIds?: Partial<Record<'anthropic' | 'openai' | 'google', string | null>>;
+  profiles?: Array<{
+    id: string;
+    provider?: string;
+    displayName?: string;
+    name?: string;
+    authType?: ProviderProfileAuthType;
+    mode?: ProviderProfileMode;
+    protocol?: 'anthropic' | 'openai' | 'google';
+    builtin?: boolean;
+    baseUrl?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }>;
+};
+
+type LegacyProviderProfilesSecretsFileV1 = {
+  version: 1;
+  providers?: {
+    anthropic?: Record<string, { apiKey?: string }>;
+  };
+};
+
+type LegacyProviderProfilesSecretsFileV2 = {
+  version: 2;
+  profiles?: Record<string, { apiKey?: string }>;
+};
+
+function safePath(projectRoot: string, ...segments: string[]): string {
+  const root = resolve(projectRoot);
+  const normalized = resolve(root, ...segments);
+  const rel = relative(root, normalized);
+  if (rel.startsWith(`..${sep}`) || rel === '..') {
+    throw new Error(`Path escapes project root: ${normalized}`);
+  }
+  return normalized;
+}
+
+function normalizeBaseUrl(baseUrl: string | undefined): string | undefined {
+  const trimmed = baseUrl?.trim();
+  return trimmed ? trimmed.replace(/\/+$/, '') : undefined;
+}
+
+function normalizeProtocol(protocol: string | undefined): ProviderProfileProtocol | undefined {
+  const trimmed = protocol?.trim();
+  if (trimmed === 'anthropic' || trimmed === 'openai' || trimmed === 'google' || trimmed === 'acp') {
+    return trimmed;
+  }
+  return undefined;
+}
+
+function normalizeStringList(values: string[] | undefined): string[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+  return values.map((value) => value.trim()).filter((value) => value.length > 0);
+}
+
+function normalizeCwd(cwd: string | undefined | null): string | undefined {
+  const trimmed = cwd?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeEnvKeys(
+  values: string[] | undefined,
+  modelAccessMode: ACPModelAccessMode | undefined,
+): string[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+  const normalized = normalizeACPEnvEntries(
+    Object.fromEntries(values.map((value) => [value, ''])),
+    modelAccessMode,
+    { strict: false },
+  ).env;
+  return normalized ? Object.keys(normalized) : undefined;
+}
+
+function normalizeAcpModelAccessMode(value: string | undefined): ACPModelAccessMode | undefined {
+  if (value === 'self_managed' || value === 'clowder_default_profile') {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeModels(models: string[] | undefined): string[] | undefined {
+  if (!Array.isArray(models)) return undefined;
+  return Array.from(new Set(models.map((value) => value.trim()).filter((value) => value.length > 0)));
+}
+
+function normalizeBuiltinModels(models: string[] | undefined, builtinModels: string[]): string[] {
+  const normalized = normalizeModels(models);
+  if (!normalized) return [...builtinModels];
+  return Array.from(new Set([...normalized, ...builtinModels]));
+}
+
+function authTypeToMode(authType: ProviderProfileAuthType): ProviderProfileMode {
+  if (authType === 'api_key') return 'api_key';
+  if (authType === 'none') return 'none';
+  return 'subscription';
+}
+
+function modeToAuthType(mode: ProviderProfileMode | undefined): ProviderProfileAuthType {
+  if (mode === 'api_key') return 'api_key';
+  if (mode === 'none') return 'none';
+  return 'oauth';
+}
+
+function slugify(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || `account-${randomUUID().slice(0, 8)}`;
+}
+
+function createUniqueAccountId(existingProfiles: ProviderProfileMeta[], displayName: string): string {
+  const seed = slugify(displayName);
+  const existingIds = new Set(existingProfiles.map((profile) => profile.id));
+  if (!existingIds.has(seed)) return seed;
+  let counter = 2;
+  while (existingIds.has(`${seed}-${counter}`)) counter += 1;
+  return `${seed}-${counter}`;
+}
+
+function createBuiltinProfiles(now = new Date().toISOString()): ProviderProfileMeta[] {
+  return BUILTIN_ACCOUNT_SPECS.map((spec) => ({
+    id: spec.id,
+    displayName: spec.displayName,
+    kind: 'builtin',
+    authType: 'oauth',
+    builtin: true,
+    client: spec.client,
+    ...(CLIENT_PROTOCOL_MAP[spec.client] ? { protocol: CLIENT_PROTOCOL_MAP[spec.client] } : {}),
+    models: [...spec.models],
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
+
+function createDefaultBootstrapBindings(): BootstrapBindings {
+  const next: BootstrapBindings = {};
+  for (const client of ALL_BUILTIN_CLIENTS) {
+    if (DEFAULT_BOOTSTRAP_CLIENTS.includes(client)) {
+      next[client] = {
+        enabled: true,
+        mode: 'oauth',
+        accountRef: BUILTIN_CLIENT_IDS[client],
+      };
+    } else {
+      next[client] = {
+        enabled: false,
+        mode: 'skip',
+      };
+    }
+  }
+  return next;
+}
+
+function createDefaultMeta(): ProviderProfilesMetaFile {
+  return {
+    version: 3,
+    activeProfileId: null,
+    providers: createBuiltinProfiles(),
+    bootstrapBindings: createDefaultBootstrapBindings(),
+  };
+}
+
+function createDefaultSecrets(): ProviderProfilesSecretsFile {
+  return {
+    version: 3,
+    profiles: {},
+  };
+}
+
+type ProviderProfileSecretEntry = ProviderProfilesSecretsFile['profiles'][string];
+
+function buildVolatileProviderProfileApiKeyRef(storageRoot: string, profileId: string): string {
+  return `${VOLATILE_PROVIDER_PROFILE_API_KEY_REF_PREFIX}${encodeURIComponent(storageRoot)}/${encodeURIComponent(profileId)}/apiKey`;
+}
+
+function isVolatileProviderProfileApiKeyRef(ref: string | undefined | null): ref is string {
+  return typeof ref === 'string' && ref.startsWith(VOLATILE_PROVIDER_PROFILE_API_KEY_REF_PREFIX);
+}
+
+function readVolatileProviderProfileApiKey(ref: string | undefined | null): string | undefined {
+  if (!isVolatileProviderProfileApiKeyRef(ref)) return undefined;
+  return volatileProviderProfileApiKeys.get(ref);
+}
+
+function writeVolatileProviderProfileApiKey(ref: string, apiKey: string): void {
+  volatileProviderProfileApiKeys.set(ref, apiKey);
+}
+
+function deleteVolatileProviderProfileApiKey(ref: string | undefined | null): void {
+  if (!isVolatileProviderProfileApiKeyRef(ref)) return;
+  volatileProviderProfileApiKeys.delete(ref);
+}
+
+function resolveStoredApiKey(entry: ProviderProfileSecretEntry | undefined): string | undefined {
+  if (!entry) return undefined;
+  if (entry.apiKey) return entry.apiKey;
+  if (entry.apiKeyRef) {
+    const volatile = readVolatileProviderProfileApiKey(entry.apiKeyRef);
+    if (volatile !== undefined) return volatile;
+    const resolved = readSecretRef(entry.apiKeyRef);
+    return resolved ?? undefined;
+  }
+  return undefined;
+}
+
+function resolveStoredEnv(entry: ProviderProfileSecretEntry | undefined): Record<string, string> | undefined {
+  if (!entry) return undefined;
+  if (entry.env) return entry.env;
+  if (entry.envRef) {
+    return decodeProviderProfileEnvSecret(readSecretRef(entry.envRef));
+  }
+  return undefined;
+}
+
+function setStoredApiKey(
+  storageRoot: string,
+  secrets: ProviderProfilesSecretsFile,
+  profileId: string,
+  apiKey: string,
+): ProviderProfileSecretEntry {
+  const nextEntry = { ...(secrets.profiles[profileId] ?? {}) };
+  if (isLocalSecretStorageEnabled()) {
+    const ref = nextEntry.apiKeyRef ?? buildProviderProfileApiKeyRef(profileId);
+    deleteVolatileProviderProfileApiKey(nextEntry.apiKeyRef);
+    writeSecretRef(ref, apiKey);
+    nextEntry.apiKeyRef = ref;
+    delete nextEntry.apiKey;
+  } else {
+    const ref = isVolatileProviderProfileApiKeyRef(nextEntry.apiKeyRef)
+      ? nextEntry.apiKeyRef
+      : buildVolatileProviderProfileApiKeyRef(storageRoot, profileId);
+    writeVolatileProviderProfileApiKey(ref, apiKey);
+    nextEntry.apiKeyRef = ref;
+    delete nextEntry.apiKey;
+  }
+  secrets.profiles[profileId] = nextEntry;
+  return nextEntry;
+}
+
+function clearStoredApiKey(secrets: ProviderProfilesSecretsFile, profileId: string): ProviderProfileSecretEntry | undefined {
+  const nextEntry = { ...(secrets.profiles[profileId] ?? {}) };
+  if (nextEntry.apiKeyRef) {
+    deleteVolatileProviderProfileApiKey(nextEntry.apiKeyRef);
+    deleteSecretRef(nextEntry.apiKeyRef);
+    delete nextEntry.apiKeyRef;
+  }
+  delete nextEntry.apiKey;
+  if (nextEntry.env || nextEntry.envRef) {
+    secrets.profiles[profileId] = nextEntry;
+    return nextEntry;
+  }
+  delete secrets.profiles[profileId];
+  return undefined;
+}
+
+function setStoredEnv(
+  secrets: ProviderProfilesSecretsFile,
+  profileId: string,
+  env: Record<string, string>,
+): ProviderProfileSecretEntry {
+  const nextEntry = { ...(secrets.profiles[profileId] ?? {}) };
+  if (isLocalSecretStorageEnabled()) {
+    const ref = nextEntry.envRef ?? buildProviderProfileEnvRef(profileId);
+    writeSecretRef(ref, encodeProviderProfileEnvSecret(env));
+    nextEntry.envRef = ref;
+    delete nextEntry.env;
+  } else {
+    nextEntry.env = env;
+    delete nextEntry.envRef;
+  }
+  secrets.profiles[profileId] = nextEntry;
+  return nextEntry;
+}
+
+function clearStoredEnv(secrets: ProviderProfilesSecretsFile, profileId: string): ProviderProfileSecretEntry | undefined {
+  const nextEntry = { ...(secrets.profiles[profileId] ?? {}) };
+  if (nextEntry.envRef) {
+    deleteSecretRef(nextEntry.envRef);
+    delete nextEntry.envRef;
+  }
+  delete nextEntry.env;
+  if (nextEntry.apiKey || nextEntry.apiKeyRef) {
+    secrets.profiles[profileId] = nextEntry;
+    return nextEntry;
+  }
+  delete secrets.profiles[profileId];
+  return undefined;
+}
+
+function isBuiltinClient(value: string | undefined | null): value is BuiltinAccountClient {
+  return value === 'anthropic' || value === 'openai' || value === 'google' || value === 'dare' || value === 'opencode';
+}
+
+function normalizeProfile(profile: ProviderProfileMeta): ProviderProfileMeta {
+  if (profile.kind === 'builtin' || profile.builtin) {
+    const client = isBuiltinClient(profile.client) ? profile.client : LEGACY_BUILTIN_ID_MAP[profile.id];
+    if (!client) {
+      throw new Error(`Unknown builtin client for account ${profile.id}`);
+    }
+    const builtin = BUILTIN_ACCOUNT_SPECS.find((spec) => spec.client === client)!;
+    return {
+      id: builtin.id,
+      displayName: profile.displayName?.trim() || builtin.displayName,
+      kind: 'builtin',
+      authType: 'oauth',
+      builtin: true,
+      client,
+      ...(CLIENT_PROTOCOL_MAP[client] ? { protocol: CLIENT_PROTOCOL_MAP[client] } : {}),
+      // Builtin baselines may grow across releases; preserve user-added models
+      // while automatically backfilling newly supported defaults.
+      models: normalizeBuiltinModels(profile.models, builtin.models),
+      createdAt: profile.createdAt || new Date().toISOString(),
+      updatedAt: profile.updatedAt || profile.createdAt || new Date().toISOString(),
+    };
+  }
+
+  const normalizedProtocol = normalizeProtocol(profile.protocol);
+  const normalizedCommand = profile.command?.trim();
+  const normalizedArgs = normalizeStringList(profile.args);
+  const normalizedModelAccessMode = normalizeAcpModelAccessMode(profile.modelAccessMode);
+  const normalizedDefaultModelProfileRef = profile.defaultModelProfileRef?.trim();
+  // Early ACP profiles were stored before kind/authType/protocol normalization landed.
+  // In practice, any custom profile with a command is an ACP profile.
+  const hasAcpSpecificFields =
+    Boolean(normalizedCommand) || normalizedModelAccessMode !== undefined || Boolean(normalizedDefaultModelProfileRef);
+  const isLegacyAcpProfile = normalizedProtocol === 'acp' || hasAcpSpecificFields;
+  const isAcpProfile = profile.kind === 'acp' || isLegacyAcpProfile;
+
+  if (isAcpProfile) {
+    if (!normalizedCommand) {
+      throw new Error(`ACP account "${profile.id}" requires a command`);
+    }
+    const modelAccessMode = normalizedModelAccessMode ?? 'self_managed';
+    const envKeys = normalizeEnvKeys(profile.envKeys, modelAccessMode);
+    return {
+      id: profile.id,
+      displayName: profile.displayName?.trim() || profile.id,
+      kind: 'acp',
+      authType: 'none',
+      builtin: false,
+      protocol: 'acp',
+      command: normalizedCommand,
+      ...(normalizedArgs?.length ? { args: normalizedArgs } : {}),
+      ...(normalizeCwd(profile.cwd) ? { cwd: normalizeCwd(profile.cwd) } : {}),
+      ...(envKeys?.length ? { envKeys } : {}),
+      modelAccessMode,
+      ...(modelAccessMode === 'clowder_default_profile' && normalizedDefaultModelProfileRef
+        ? { defaultModelProfileRef: normalizedDefaultModelProfileRef }
+        : {}),
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt,
+    };
+  }
+
+  return {
+    id: profile.id,
+    displayName: profile.displayName?.trim() || profile.id,
+    kind: 'api_key',
+    authType: 'api_key',
+    builtin: false,
+    ...(normalizedProtocol ? { protocol: normalizedProtocol } : {}),
+    ...(normalizeBaseUrl(profile.baseUrl) ? { baseUrl: normalizeBaseUrl(profile.baseUrl) } : {}),
+    ...(normalizeModels(profile.models) !== undefined ? { models: normalizeModels(profile.models) } : {}),
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  };
+}
+
+function inferLegacyProtocol(...candidates: Array<string | undefined>): ProviderProfileProtocol | undefined {
+  for (const candidate of candidates) {
+    const normalized = normalizeProtocol(candidate);
+    if (normalized) return normalized;
+  }
+  return undefined;
+}
+
+function migrateLegacyMetaV1(meta: LegacyProviderProfilesMetaFileV1 | null): ProviderProfilesMetaFile {
+  const next = createDefaultMeta();
+  if (!meta?.providers?.anthropic?.profiles) return next;
+
+  const now = new Date().toISOString();
+  const migrated: ProviderProfileMeta[] = [];
+  for (const legacyProfile of meta.providers.anthropic.profiles) {
+    const legacyId = legacyProfile.id;
+    if (legacyId === 'anthropic-subscription-default' || LEGACY_BUILTIN_ID_MAP[legacyId]) {
+      continue;
+    }
+    migrated.push({
+      id: legacyId,
+      displayName: legacyProfile.displayName?.trim() || legacyProfile.name?.trim() || legacyId,
+      kind: 'api_key',
+      authType: 'api_key',
+      builtin: false,
+      protocol: inferLegacyProtocol(legacyProfile.provider, 'anthropic'),
+      ...(normalizeBaseUrl(legacyProfile.baseUrl) ? { baseUrl: normalizeBaseUrl(legacyProfile.baseUrl) } : {}),
+      createdAt: legacyProfile.createdAt || now,
+      updatedAt: legacyProfile.updatedAt || legacyProfile.createdAt || now,
+    });
+  }
+  next.providers.push(...migrated);
+
+  const activeId = meta.providers.anthropic.activeProfileId;
+  if (activeId && !LEGACY_BUILTIN_ID_MAP[activeId] && migrated.some((profile) => profile.id === activeId)) {
+    next.bootstrapBindings.anthropic = {
+      enabled: true,
+      mode: 'api_key',
+      accountRef: activeId,
+    };
+  }
+  return next;
+}
+
+function migrateLegacyMetaV2(meta: LegacyProviderProfilesMetaFileV2 | null): ProviderProfilesMetaFile {
+  const next = createDefaultMeta();
+  if (!meta?.profiles) return next;
+
+  const now = new Date().toISOString();
+  const migrated: ProviderProfileMeta[] = [];
+  for (const legacyProfile of meta.profiles) {
+    const legacyId = legacyProfile.id;
+    const builtinClient = LEGACY_BUILTIN_ID_MAP[legacyId];
+    if (builtinClient) {
+      continue;
+    }
+    if (legacyProfile.builtin) {
+      continue;
+    }
+    migrated.push({
+      id: legacyId,
+      displayName: legacyProfile.displayName?.trim() || legacyProfile.name?.trim() || legacyId,
+      kind: 'api_key',
+      authType: 'api_key',
+      builtin: false,
+      ...(inferLegacyProtocol(legacyProfile.protocol, legacyProfile.provider)
+        ? { protocol: inferLegacyProtocol(legacyProfile.protocol, legacyProfile.provider) }
+        : {}),
+      ...(normalizeBaseUrl(legacyProfile.baseUrl) ? { baseUrl: normalizeBaseUrl(legacyProfile.baseUrl) } : {}),
+      createdAt: legacyProfile.createdAt || now,
+      updatedAt: legacyProfile.updatedAt || legacyProfile.createdAt || now,
+    });
+  }
+  next.providers.push(...migrated);
+
+  const selected = meta.activeProfileIds ?? {};
+  const legacyAnthropic = selected.anthropic ?? meta.activeProfileId ?? null;
+  const legacyOpenAI = selected.openai ?? null;
+  const legacyGoogle = selected.google ?? null;
+  const picks: Array<[BuiltinAccountClient, string | null]> = [
+    ['anthropic', legacyAnthropic],
+    ['openai', legacyOpenAI],
+    ['google', legacyGoogle],
+  ];
+  for (const [client, activeId] of picks) {
+    if (!activeId || LEGACY_BUILTIN_ID_MAP[activeId]) continue;
+    if (!migrated.some((profile) => profile.id === activeId)) continue;
+    next.bootstrapBindings[client] = {
+      enabled: true,
+      mode: 'api_key',
+      accountRef: activeId,
+    };
+  }
+  return next;
+}
+
+function normalizeBootstrapBindings(
+  raw: BootstrapBindings | undefined,
+  profiles: ProviderProfileMeta[],
+): BootstrapBindings {
+  const defaults = createDefaultBootstrapBindings();
+  const byId = new Map(profiles.map((profile) => [profile.id, profile] as const));
+  const next: BootstrapBindings = {};
+
+  for (const client of ALL_BUILTIN_CLIENTS) {
+    const candidate = raw?.[client];
+    if (!candidate) {
+      next[client] = defaults[client];
+      continue;
+    }
+
+    if (candidate.mode === 'oauth') {
+      next[client] =
+        candidate.enabled === false
+          ? defaults[client]
+          : {
+              enabled: true,
+              mode: 'oauth',
+              accountRef: BUILTIN_CLIENT_IDS[client],
+            };
+      continue;
+    }
+
+    if (candidate.mode === 'skip' || candidate.enabled === false) {
+      next[client] = { enabled: false, mode: 'skip' };
+      continue;
+    }
+
+    const accountRef = candidate.accountRef?.trim();
+    const profile = accountRef ? byId.get(accountRef) : undefined;
+    if (candidate.mode === 'api_key' && profile?.kind === 'api_key') {
+      next[client] = { enabled: true, mode: 'api_key', accountRef: profile.id };
+      continue;
+    }
+
+    next[client] = defaults[client];
+  }
+
+  return next;
+}
+
+function sortProfiles(profiles: ProviderProfileMeta[]): ProviderProfileMeta[] {
+  const builtinOrder = new Map<string, number>(BUILTIN_ACCOUNT_SPECS.map((spec, index) => [spec.id, index]));
+  return [...profiles].sort((a, b) => {
+    const aBuiltin = builtinOrder.get(a.id);
+    const bBuiltin = builtinOrder.get(b.id);
+    if (aBuiltin != null && bBuiltin != null) return aBuiltin - bBuiltin;
+    if (aBuiltin != null) return -1;
+    if (bBuiltin != null) return 1;
+    return a.createdAt.localeCompare(b.createdAt);
+  });
+}
+
+function normalizeMeta(
+  meta: ProviderProfilesMetaFile | LegacyProviderProfilesMetaFileV1 | LegacyProviderProfilesMetaFileV2 | null,
+): NormalizedState<ProviderProfilesMetaFile> {
+  if (!meta) {
+    return { value: createDefaultMeta(), dirty: true };
+  }
+
+  let next: ProviderProfilesMetaFile;
+  let dirty = false;
+
+  if (meta.version === 1) {
+    next = migrateLegacyMetaV1(meta);
+    dirty = true;
+  } else if (meta.version === 2) {
+    next = migrateLegacyMetaV2(meta);
+    dirty = true;
+  } else {
+    next = structuredClone(meta);
+  }
+
+  const normalizedProfiles = new Map<string, ProviderProfileMeta>();
+  for (const builtin of createBuiltinProfiles()) {
+    normalizedProfiles.set(builtin.id, builtin);
+  }
+  for (const rawProfile of next.providers ?? []) {
+    const profile = normalizeProfile(rawProfile);
+    normalizedProfiles.set(profile.id, profile);
+  }
+
+  const providers = sortProfiles(Array.from(normalizedProfiles.values()));
+  const bootstrapBindings = normalizeBootstrapBindings(next.bootstrapBindings, providers);
+  if (
+    JSON.stringify(providers) !== JSON.stringify(next.providers ?? []) ||
+    JSON.stringify(bootstrapBindings) !== JSON.stringify(next.bootstrapBindings ?? {})
+  ) {
+    dirty = true;
+  }
+
+  return {
+    value: {
+      version: 3,
+      activeProfileId: null,
+      providers,
+      bootstrapBindings,
+    },
+    dirty,
+  };
+}
+
+function migrateLegacySecrets(
+  secrets:
+    | ProviderProfilesSecretsFile
+    | LegacyProviderProfilesSecretsFileV1
+    | LegacyProviderProfilesSecretsFileV2
+    | null,
+): ProviderProfilesSecretsFile {
+  if (!secrets) return createDefaultSecrets();
+  if (secrets.version === 1) {
+    return {
+      version: 3,
+      profiles: { ...(secrets.providers?.anthropic ?? {}) },
+    };
+  }
+  if (secrets.version === 2) {
+    return {
+      version: 3,
+      profiles: { ...(secrets.profiles ?? {}) },
+    };
+  }
+  return secrets;
+}
+
+function normalizeSecrets(
+  secrets:
+    | ProviderProfilesSecretsFile
+    | LegacyProviderProfilesSecretsFileV1
+    | LegacyProviderProfilesSecretsFileV2
+    | null,
+): NormalizedState<ProviderProfilesSecretsFile> {
+  if (!secrets) {
+    return { value: createDefaultSecrets(), dirty: true };
+  }
+  if (secrets.version !== 3) {
+    return { value: migrateLegacySecrets(secrets), dirty: true };
+  }
+  return { value: secrets, dirty: false };
+}
+
+async function readJsonOrNull<T>(filePath: string): Promise<T | null> {
+  try {
+    const raw = await readFile(filePath, 'utf-8');
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
+  const tempPath = `${filePath}.tmp-${randomUUID()}`;
+  await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+  try {
+    await rename(tempPath, filePath);
+  } catch (error) {
+    await unlink(tempPath).catch(() => {});
+    throw error;
+  }
+}
+
+async function migrateProjectLocalToGlobal(projectRoot: string, globalRoot: string): Promise<void> {
+  const localResult = await readRawAtStorageRoot(projectRoot);
+  const globalDir = safePath(globalRoot, OFFICE_CLAW_DIR);
+  await mkdir(globalDir, { recursive: true });
+  const globalMetaPath = safePath(globalRoot, OFFICE_CLAW_DIR, META_FILENAME);
+  const globalSecretsPath = safePath(globalRoot, OFFICE_CLAW_DIR, SECRETS_FILENAME);
+
+  // Merge: if global already has profiles, add local profiles (re-ID on collision)
+  if (existsSync(globalMetaPath)) {
+    const globalResult = await readRawAtStorageRoot(globalRoot);
+    const existingIds = new Set(globalResult.meta.providers.map((p) => p.id));
+    const renamedIds = new Map<string, string>();
+    for (const profile of localResult.meta.providers) {
+      // Skip builtins — normalization already guarantees their presence in the global store.
+      if (profile.kind === 'builtin' || profile.builtin) continue;
+      let mergedId = profile.id;
+      if (existingIds.has(mergedId)) {
+        mergedId = `${mergedId}-migrated-${Date.now()}`;
+        renamedIds.set(profile.id, mergedId);
+      }
+      const mergedProfile = { ...profile, id: mergedId };
+      globalResult.meta.providers.push(mergedProfile);
+      existingIds.add(mergedId);
+      const secretEntry = localResult.secrets.profiles[profile.id];
+      if (secretEntry) {
+        globalResult.secrets.profiles[mergedId] = secretEntry;
+      }
+    }
+    await writeRaw(globalMetaPath, globalSecretsPath, globalResult.meta, globalResult.secrets);
+    rewriteCatalogProfileRefs(projectRoot, renamedIds);
+  } else {
+    await writeRaw(globalMetaPath, globalSecretsPath, localResult.meta, localResult.secrets);
+  }
+
+  await chmod(globalSecretsPath, 0o600);
+
+  // Mark local file as migrated to prevent re-processing.
+  // Best-effort: global data is already persisted, so read-only checkouts
+  // (EACCES/EROFS) or concurrent renames (ENOENT) should not crash callers.
+  // When rename fails, record in global migrated-roots so detection skips this project.
+  const localMetaPath = safePath(projectRoot, OFFICE_CLAW_DIR, META_FILENAME);
+  try {
+    renameSync(localMetaPath, `${localMetaPath}.migrated`);
+  } catch {
+    markProjectRootMigrated(projectRoot);
+  }
+}
+
+function migrateProjectLocalToGlobalSync(projectRoot: string, globalRoot: string): void {
+  const localDir = safePath(projectRoot, OFFICE_CLAW_DIR);
+  const globalDir = safePath(globalRoot, OFFICE_CLAW_DIR);
+  mkdirSync(globalDir, { recursive: true });
+  const localMetaPath = safePath(localDir, META_FILENAME);
+  const localSecretsPath = safePath(localDir, SECRETS_FILENAME);
+  const globalMetaPath = safePath(globalDir, META_FILENAME);
+  const globalSecretsPath = safePath(globalDir, SECRETS_FILENAME);
+
+  if (!existsSync(localMetaPath)) return;
+
+  // Merge: if global already has profiles, add local profiles (re-ID on collision)
+  if (existsSync(globalMetaPath)) {
+    const rawLocalMeta = JSON.parse(readFileSync(localMetaPath, 'utf-8'));
+    const normalizedLocal = normalizeMeta(rawLocalMeta);
+    const rawGlobalMeta = JSON.parse(readFileSync(globalMetaPath, 'utf-8'));
+    const globalMeta = normalizeMeta(rawGlobalMeta).value;
+    const existingIds = new Set(globalMeta.providers.map((p) => p.id));
+    const localProviders: ProviderProfileMeta[] = [];
+    const renamedIds = new Map<string, string>();
+    for (const p of normalizedLocal.value.providers) {
+      // Skip builtins — normalization already guarantees their presence in the global store.
+      if (p.kind === 'builtin' || p.builtin) continue;
+      let mergedId = p.id;
+      if (existingIds.has(mergedId)) {
+        mergedId = `${mergedId}-migrated-${Date.now()}`;
+        renamedIds.set(p.id, mergedId);
+      }
+      localProviders.push({ ...p, id: mergedId });
+      existingIds.add(mergedId);
+    }
+    if (localProviders.length > 0) {
+      globalMeta.providers = [...globalMeta.providers, ...localProviders];
+      writeFileSync(globalMetaPath, `${JSON.stringify(globalMeta, null, 2)}\n`);
+      // Merge secrets too
+      if (existsSync(localSecretsPath)) {
+        const rawLocalSecrets = JSON.parse(readFileSync(localSecretsPath, 'utf-8'));
+        const localSecrets = normalizeSecrets(rawLocalSecrets).value;
+        const rawGlobalSecrets = existsSync(globalSecretsPath)
+          ? JSON.parse(readFileSync(globalSecretsPath, 'utf-8'))
+          : null;
+        const globalSecrets = normalizeSecrets(rawGlobalSecrets).value;
+        for (const p of localProviders) {
+          const originalId = p.id.replace(/-migrated-\d+$/, '');
+          const secretEntry = localSecrets.profiles[originalId] ?? localSecrets.profiles[p.id];
+          if (secretEntry) {
+            globalSecrets.profiles[p.id] = secretEntry;
+          }
+        }
+        writeFileSync(globalSecretsPath, `${JSON.stringify(globalSecrets, null, 2)}\n`);
+        chmodSync(globalSecretsPath, 0o600);
+      }
+      rewriteCatalogProfileRefs(projectRoot, renamedIds);
+    }
+  } else {
+    copyFileSync(localMetaPath, globalMetaPath);
+    if (existsSync(localSecretsPath)) {
+      copyFileSync(localSecretsPath, globalSecretsPath);
+      chmodSync(globalSecretsPath, 0o600);
+    }
+  }
+
+  // Mark local file as migrated.
+  // Best-effort: global data is already persisted, so read-only checkouts
+  // (EACCES/EROFS) or concurrent renames (ENOENT) should not crash callers.
+  // When rename fails, record in global migrated-roots so detection skips this project.
+  try {
+    renameSync(localMetaPath, `${localMetaPath}.migrated`);
+  } catch {
+    markProjectRootMigrated(projectRoot);
+  }
+}
+
+async function readRaw(projectRoot: string): Promise<{
+  meta: ProviderProfilesMetaFile;
+  secrets: ProviderProfilesSecretsFile;
+  metaPath: string;
+  secretsPath: string;
+  dirty: boolean;
+}> {
+  const storageRoot = await resolveProviderProfilesRoot(projectRoot);
+  registerProjectRoot(projectRoot);
+  const localRoot = detectProjectLocalProfiles(projectRoot);
+  if (localRoot) {
+    await withStorageRootLock(storageRoot, () => migrateProjectLocalToGlobal(localRoot, storageRoot));
+  }
+  return readRawAtStorageRoot(storageRoot);
+}
+
+async function readRawAtStorageRoot(storageRoot: string): Promise<{
+  meta: ProviderProfilesMetaFile;
+  secrets: ProviderProfilesSecretsFile;
+  metaPath: string;
+  secretsPath: string;
+  dirty: boolean;
+}> {
+  const dir = safePath(storageRoot, OFFICE_CLAW_DIR);
+  const metaPath = safePath(storageRoot, OFFICE_CLAW_DIR, META_FILENAME);
+  const secretsPath = safePath(storageRoot, OFFICE_CLAW_DIR, SECRETS_FILENAME);
+  await mkdir(dir, { recursive: true });
+  const normalizedMeta = normalizeMeta(
+    await readJsonOrNull<
+      ProviderProfilesMetaFile | LegacyProviderProfilesMetaFileV1 | LegacyProviderProfilesMetaFileV2
+    >(metaPath),
+  );
+  const normalizedSecrets = normalizeSecrets(
+    await readJsonOrNull<
+      ProviderProfilesSecretsFile | LegacyProviderProfilesSecretsFileV1 | LegacyProviderProfilesSecretsFileV2
+    >(secretsPath),
+  );
+  const apiKeyDirty = syncStoredApiKeys(storageRoot, normalizedSecrets.value);
+  const envDirty = syncAcpEnvMetadata(normalizedMeta.value, normalizedSecrets.value);
+  return {
+    meta: normalizedMeta.value,
+    secrets: normalizedSecrets.value,
+    metaPath,
+    secretsPath,
+    dirty: normalizedMeta.dirty || normalizedSecrets.dirty || apiKeyDirty || envDirty,
+  };
+}
+
+function syncStoredApiKeys(storageRoot: string, secrets: ProviderProfilesSecretsFile): boolean {
+  let dirty = false;
+
+  for (const [profileId, entry] of Object.entries(secrets.profiles)) {
+    if (!entry) continue;
+    const apiKey = entry.apiKey?.trim();
+    if (!apiKey) {
+      if (entry.apiKey !== undefined) {
+        delete entry.apiKey;
+        dirty = true;
+      }
+      continue;
+    }
+
+    if (isLocalSecretStorageEnabled()) {
+      const ref =
+        entry.apiKeyRef && !isVolatileProviderProfileApiKeyRef(entry.apiKeyRef)
+          ? entry.apiKeyRef
+          : buildProviderProfileApiKeyRef(profileId);
+      deleteVolatileProviderProfileApiKey(entry.apiKeyRef);
+      writeSecretRef(ref, apiKey);
+      entry.apiKeyRef = ref;
+    } else {
+      const ref = isVolatileProviderProfileApiKeyRef(entry.apiKeyRef)
+        ? entry.apiKeyRef
+        : buildVolatileProviderProfileApiKeyRef(storageRoot, profileId);
+      writeVolatileProviderProfileApiKey(ref, apiKey);
+      entry.apiKeyRef = ref;
+    }
+
+    delete entry.apiKey;
+    dirty = true;
+  }
+
+  return dirty;
+}
+
+function syncAcpEnvMetadata(meta: ProviderProfilesMetaFile, secrets: ProviderProfilesSecretsFile): boolean {
+  let dirty = false;
+
+  for (const profile of meta.providers) {
+    const existingSecretEntry = secrets.profiles[profile.id];
+    if (profile.kind !== 'acp') {
+      if (profile.envKeys !== undefined) {
+        delete profile.envKeys;
+        dirty = true;
+      }
+      if (existingSecretEntry?.env !== undefined || existingSecretEntry?.envRef !== undefined) {
+        clearStoredEnv(secrets, profile.id);
+        dirty = true;
+      }
+      continue;
+    }
+
+    const resolvedEnv = resolveStoredEnv(existingSecretEntry);
+    const normalizedEnv = normalizeACPEnvEntries(resolvedEnv, profile.modelAccessMode, { strict: false }).env;
+    const nextEnvKeys = normalizedEnv ? Object.keys(normalizedEnv) : undefined;
+    if (JSON.stringify(profile.envKeys ?? []) !== JSON.stringify(nextEnvKeys ?? [])) {
+      if (nextEnvKeys?.length) profile.envKeys = nextEnvKeys;
+      else delete profile.envKeys;
+      dirty = true;
+    }
+
+    if (JSON.stringify(resolvedEnv ?? null) !== JSON.stringify(normalizedEnv ?? null)) {
+      if (normalizedEnv) setStoredEnv(secrets, profile.id, normalizedEnv);
+      else clearStoredEnv(secrets, profile.id);
+      dirty = true;
+    }
+  }
+
+  return dirty;
+}
+
+async function writeRaw(
+  metaPath: string,
+  secretsPath: string,
+  meta: ProviderProfilesMetaFile,
+  secrets: ProviderProfilesSecretsFile,
+): Promise<void> {
+  await writeJsonAtomic(secretsPath, secrets);
+  await chmod(secretsPath, 0o600);
+  await writeJsonAtomic(metaPath, meta);
+}
+
+function toViewProfile(profile: ProviderProfileMeta, secrets: ProviderProfilesSecretsFile): ProviderProfileView {
+  return {
+    ...profile,
+    provider: profile.id,
+    name: profile.displayName,
+    mode: authTypeToMode(profile.authType),
+    hasApiKey: Boolean(resolveStoredApiKey(secrets.profiles[profile.id])),
+  };
+}
+
+function toView(meta: ProviderProfilesMetaFile, secrets: ProviderProfilesSecretsFile): ProviderProfilesView {
+  return {
+    activeProfileId: null,
+    providers: meta.providers.map((profile) => toViewProfile(profile, secrets)),
+    bootstrapBindings: meta.bootstrapBindings,
+  };
+}
+
+function requireDisplayName(input: CreateProviderProfileInput | UpdateProviderProfileInput): string {
+  const displayName = input.displayName ?? input.name;
+  const trimmed = displayName?.trim();
+  if (!trimmed) throw new Error('displayName or name is required');
+  return trimmed;
+}
+
+function findProfile(meta: ProviderProfilesMetaFile, profileId: string): ProviderProfileMeta | undefined {
+  return meta.providers.find((profile) => profile.id === profileId);
+}
+
+function resolveClientFromSelector(
+  selector: ProviderProfileProvider | undefined,
+  profile?: ProviderProfileMeta,
+): BuiltinAccountClient | null {
+  const trimmed = selector?.trim();
+  if (trimmed && isBuiltinClient(trimmed)) return trimmed;
+  if (profile?.client) return profile.client;
+  if (trimmed) {
+    const legacyClient = LEGACY_BUILTIN_ID_MAP[trimmed];
+    if (legacyClient) return legacyClient;
+  }
+  return null;
+}
+
+function assertProviderSelector(profile: ProviderProfileMeta, selector: ProviderProfileProvider): void {
+  const trimmed = selector?.trim();
+  if (!trimmed) return;
+  if (trimmed === profile.id) return;
+  if (profile.kind === 'acp') {
+    if (trimmed === 'acp') return;
+    throw new Error('profile not found');
+  }
+  if (profile.kind === 'api_key') {
+    if (isBuiltinClient(trimmed)) return;
+    if (LEGACY_BUILTIN_ID_MAP[trimmed]) return;
+    throw new Error('profile not found');
+  }
+  if (profile.client && trimmed === profile.client) return;
+  if (LEGACY_BUILTIN_ID_MAP[trimmed] && profile.client === LEGACY_BUILTIN_ID_MAP[trimmed]) return;
+  throw new Error('profile not found');
+}
+
+function readRuntimeCatalog(projectRoot: string): any | null {
+  const filePath = resolve(projectRoot, '.office-claw', 'office-claw-catalog.json');
+  if (!existsSync(filePath)) return null;
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * After migration renames profile IDs (collision avoidance), update agent catalog
+ * entries that still reference the original ID so they point to the new ID.
+ */
+function rewriteCatalogProfileRefs(projectRoot: string, idMap: Map<string, string>): void {
+  if (idMap.size === 0) return;
+  const catalog = readRuntimeCatalog(projectRoot);
+  if (!catalog?.breeds || !Array.isArray(catalog.breeds)) return;
+  let dirty = false;
+  for (const breed of catalog.breeds) {
+    for (const variant of breed.variants ?? []) {
+      const ref = typeof variant.accountRef === 'string' ? variant.accountRef : variant.providerProfileId;
+      const newId = ref ? idMap.get(ref) : undefined;
+      if (!newId) continue;
+      if (typeof variant.accountRef === 'string') variant.accountRef = newId;
+      if (variant.providerProfileId != null) variant.providerProfileId = newId;
+      dirty = true;
+    }
+  }
+  if (!dirty) return;
+  const filePath = resolve(projectRoot, '.office-claw', 'office-claw-catalog.json');
+  writeFileSync(filePath, `${JSON.stringify(catalog, null, 2)}\n`);
+}
+
+function collectRuntimeCatsBoundToProfile(projectRoot: string, profileId: string): string[] {
+  const catalog = readRuntimeCatalog(projectRoot);
+  if (!catalog?.breeds || !Array.isArray(catalog.breeds)) return [];
+  const result = new Set<string>();
+  for (const breed of catalog.breeds) {
+    for (const variant of breed.variants ?? []) {
+      const accountRef = typeof variant.accountRef === 'string' ? variant.accountRef : variant.providerProfileId;
+      if (accountRef !== profileId) continue;
+      result.add(variant.agentId ?? breed.agentId);
+    }
+  }
+  return Array.from(result);
+}
+
+async function collectRuntimeCatsBoundToProfileAcrossRoots(projectRoot: string, profileId: string): Promise<string[]> {
+  const roots = await listProviderProfilesProjectRoots(projectRoot);
+  const result = new Set<string>();
+  for (const root of roots) {
+    for (const agentId of collectRuntimeCatsBoundToProfile(root, profileId)) {
+      result.add(agentId);
+    }
+  }
+  return Array.from(result);
+}
+
+function isReferencedByBootstrapBindings(meta: ProviderProfilesMetaFile, profileId: string): boolean {
+  return Object.values(meta.bootstrapBindings).some((binding) => binding?.accountRef === profileId);
+}
+
+export function builtinAccountIdForClient(client: BuiltinAccountClient): string {
+  return BUILTIN_CLIENT_IDS[client];
+}
+
+export async function readBootstrapBindings(projectRoot: string): Promise<BootstrapBindings> {
+  return withProviderStoreLock(projectRoot, async (storageRoot) => {
+    const { meta, secrets, metaPath, secretsPath, dirty } = await readRawAtStorageRoot(storageRoot);
+    if (dirty) await writeRaw(metaPath, secretsPath, meta, secrets);
+    return meta.bootstrapBindings;
+  });
+}
+
+export function readBootstrapBindingsSync(projectRoot: string): BootstrapBindings {
+  const storageRoot = resolveProviderProfilesRootSync(projectRoot);
+  registerProjectRoot(projectRoot);
+  const localRoot = detectProjectLocalProfiles(projectRoot);
+  if (localRoot) {
+    migrateProjectLocalToGlobalSync(localRoot, storageRoot);
+  }
+  const metaPath = safePath(storageRoot, OFFICE_CLAW_DIR, META_FILENAME);
+  const raw = existsSync(metaPath)
+    ? (JSON.parse(readFileSync(metaPath, 'utf-8')) as
+        | ProviderProfilesMetaFile
+        | LegacyProviderProfilesMetaFileV1
+        | LegacyProviderProfilesMetaFileV2)
+    : null;
+  return normalizeMeta(raw).value.bootstrapBindings;
+}
+
+export async function setBootstrapBinding(
+  projectRoot: string,
+  client: BuiltinAccountClient,
+  binding: BootstrapBinding,
+): Promise<BootstrapBindings> {
+  return withProviderStoreLock(projectRoot, async (storageRoot) => {
+    const { meta, secrets, metaPath, secretsPath } = await readRawAtStorageRoot(storageRoot);
+    if (!isBuiltinClient(client)) {
+      throw new Error(`unsupported client "${client}"`);
+    }
+    if (binding.mode === 'skip' || !binding.enabled) {
+      meta.bootstrapBindings[client] = { enabled: false, mode: 'skip' };
+    } else if (binding.mode === 'api_key') {
+      const accountRef = binding.accountRef?.trim();
+      const profile = accountRef ? findProfile(meta, accountRef) : undefined;
+      if (!profile || profile.kind !== 'api_key') {
+        throw new Error(`bootstrap api_key binding for "${client}" requires an existing api_key account`);
+      }
+      meta.bootstrapBindings[client] = {
+        enabled: true,
+        mode: 'api_key',
+        accountRef: profile.id,
+      };
+    } else {
+      meta.bootstrapBindings[client] = {
+        enabled: true,
+        mode: 'oauth',
+        accountRef: builtinAccountIdForClient(client),
+      };
+    }
+    await writeRaw(metaPath, secretsPath, meta, secrets);
+    return meta.bootstrapBindings;
+  });
+}
+
+export async function readProviderProfiles(projectRoot: string): Promise<ProviderProfilesView> {
+  return withProviderStoreLock(projectRoot, async (storageRoot) => {
+    const { meta, secrets, metaPath, secretsPath, dirty } = await readRawAtStorageRoot(storageRoot);
+    if (dirty) await writeRaw(metaPath, secretsPath, meta, secrets);
+
+    const refsToPreload: string[] = [];
+    for (const profileId of Object.keys(secrets.profiles)) {
+      const entry = secrets.profiles[profileId];
+      if (entry?.apiKeyRef) refsToPreload.push(entry.apiKeyRef);
+      if (entry?.envRef) refsToPreload.push(entry.envRef);
+    }
+    preloadSecretRefs(refsToPreload);
+
+    return toView(meta, secrets);
+  });
+}
+
+export async function createProviderProfile(
+  projectRoot: string,
+  input: CreateProviderProfileInput,
+): Promise<ProviderProfileView> {
+  return withProviderStoreLock(projectRoot, async (storageRoot) => {
+    const { meta, secrets, metaPath, secretsPath } = await readRawAtStorageRoot(storageRoot);
+    const displayName = requireDisplayName(input);
+    const kind = input.kind ?? (input.protocol === 'acp' ? 'acp' : 'api_key');
+    const now = new Date().toISOString();
+    let profile: ProviderProfileMeta;
+
+    if (kind === 'acp') {
+      const command = input.command?.trim();
+      if (!command) throw new Error('command is required for ACP providers');
+      const modelAccessMode = normalizeAcpModelAccessMode(input.modelAccessMode) ?? 'self_managed';
+      const defaultModelProfileRef = input.defaultModelProfileRef?.trim();
+      const env = normalizeACPEnvEntries(input.env, modelAccessMode).env;
+      if (modelAccessMode === 'clowder_default_profile' && !defaultModelProfileRef) {
+        throw new Error('defaultModelProfileRef is required when modelAccessMode=clowder_default_profile');
+      }
+      if (input.setActive) {
+        throw new Error('ACP providers do not support bootstrap activation');
+      }
+      profile = {
+        id: createUniqueAccountId(meta.providers, displayName),
+        displayName,
+        kind: 'acp',
+        authType: 'none',
+        builtin: false,
+        protocol: 'acp',
+        command,
+        ...(normalizeStringList(input.args)?.length ? { args: normalizeStringList(input.args) } : {}),
+        ...(normalizeCwd(input.cwd) ? { cwd: normalizeCwd(input.cwd) } : {}),
+        ...(env ? { envKeys: Object.keys(env) } : {}),
+        modelAccessMode,
+        ...(modelAccessMode === 'clowder_default_profile' && defaultModelProfileRef
+          ? { defaultModelProfileRef }
+          : {}),
+        createdAt: now,
+        updatedAt: now,
+      };
+      if (env) {
+        setStoredEnv(secrets, profile.id, env);
+      }
+    } else {
+      const protocol = normalizeProtocol(input.protocol);
+      const authType = input.authType ?? modeToAuthType(input.mode);
+      if (authType !== 'api_key') {
+        throw new Error('only api_key accounts can be created');
+      }
+      if (input.env) {
+        throw new Error('env is only supported for ACP providers');
+      }
+      const apiKey = input.apiKey?.trim();
+      if (!apiKey) throw new Error('apiKey is required for api_key mode');
+
+      profile = {
+        id: createUniqueAccountId(meta.providers, displayName),
+        displayName,
+        kind: 'api_key',
+        authType,
+        builtin: false,
+        ...(protocol ? { protocol } : {}),
+        ...(normalizeBaseUrl(input.baseUrl) ? { baseUrl: normalizeBaseUrl(input.baseUrl) } : {}),
+        ...(normalizeModels(input.models) !== undefined ? { models: normalizeModels(input.models) } : {}),
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      if (apiKey) {
+        setStoredApiKey(storageRoot, secrets, profile.id, apiKey);
+      }
+      if (input.setActive) {
+        const client = resolveClientFromSelector(input.provider ?? input.protocol, profile);
+        if (!client) {
+          throw new Error('client selector is required to bind an api_key account');
+        }
+        meta.bootstrapBindings[client] = {
+          enabled: true,
+          mode: 'api_key',
+          accountRef: profile.id,
+        };
+      }
+    }
+
+    meta.providers.push(profile);
+    await writeRaw(metaPath, secretsPath, meta, secrets);
+    return toViewProfile(profile, secrets);
+  });
+}
+
+export async function updateProviderProfile(
+  projectRoot: string,
+  provider: ProviderProfileProvider,
+  profileId: string,
+  input: UpdateProviderProfileInput,
+): Promise<ProviderProfileView> {
+  return withProviderStoreLock(projectRoot, async (storageRoot) => {
+    const { meta, secrets, metaPath, secretsPath } = await readRawAtStorageRoot(storageRoot);
+    const profile = findProfile(meta, profileId);
+    if (!profile) throw new Error('profile not found');
+    assertProviderSelector(profile, provider);
+    if (profile.kind === 'acp') {
+      if (typeof input.name === 'string' || typeof input.displayName === 'string') {
+        profile.displayName = requireDisplayName(input);
+      }
+      if (input.command !== undefined) {
+        const command = input.command.trim();
+        if (!command) throw new Error('command is required for ACP providers');
+        profile.command = command;
+      }
+      if (input.args !== undefined) {
+        profile.args = normalizeStringList(input.args);
+      }
+      if (input.cwd !== undefined) {
+        const cwd = normalizeCwd(input.cwd);
+        if (cwd) profile.cwd = cwd;
+        else delete profile.cwd;
+      }
+      if (input.modelAccessMode !== undefined) {
+        const modelAccessMode = normalizeAcpModelAccessMode(input.modelAccessMode);
+        if (!modelAccessMode) throw new Error('invalid modelAccessMode');
+        profile.modelAccessMode = modelAccessMode;
+        if (modelAccessMode === 'self_managed') {
+          delete profile.defaultModelProfileRef;
+        }
+      }
+      if (input.defaultModelProfileRef !== undefined) {
+        const ref = input.defaultModelProfileRef?.trim();
+        if (ref) profile.defaultModelProfileRef = ref;
+        else delete profile.defaultModelProfileRef;
+      }
+      if (input.env !== undefined) {
+        const normalizedEnv = normalizeACPEnvEntries(input.env, profile.modelAccessMode).env;
+        if (normalizedEnv) setStoredEnv(secrets, profile.id, normalizedEnv);
+        else clearStoredEnv(secrets, profile.id);
+        if (normalizedEnv) profile.envKeys = Object.keys(normalizedEnv);
+        else delete profile.envKeys;
+      }
+      if ((profile.modelAccessMode ?? 'self_managed') === 'clowder_default_profile' && !profile.defaultModelProfileRef) {
+        throw new Error('defaultModelProfileRef is required when modelAccessMode=clowder_default_profile');
+      }
+      if (input.env === undefined) {
+        const normalizedEnv = normalizeACPEnvEntries(resolveStoredEnv(secrets.profiles[profile.id]), profile.modelAccessMode, {
+          strict: false,
+        }).env;
+        if (normalizedEnv) setStoredEnv(secrets, profile.id, normalizedEnv);
+        else clearStoredEnv(secrets, profile.id);
+        if (normalizedEnv) profile.envKeys = Object.keys(normalizedEnv);
+        else delete profile.envKeys;
+      }
+      profile.updatedAt = new Date().toISOString();
+      await writeRaw(metaPath, secretsPath, meta, secrets);
+      return toViewProfile(profile, secrets);
+    }
+    if (profile.kind === 'builtin') {
+      const hasNonModelUpdates =
+        input.kind !== undefined ||
+        input.name !== undefined ||
+        input.displayName !== undefined ||
+        input.mode !== undefined ||
+        input.authType !== undefined ||
+        input.protocol !== undefined ||
+        input.baseUrl !== undefined ||
+        input.apiKey !== undefined ||
+        input.modelOverride !== undefined ||
+        input.command !== undefined ||
+        input.args !== undefined ||
+        input.cwd !== undefined ||
+        input.env !== undefined ||
+        input.modelAccessMode !== undefined ||
+        input.defaultModelProfileRef !== undefined;
+      if (hasNonModelUpdates) {
+        throw new Error('builtin accounts only support model updates');
+      }
+      if (input.models !== undefined) {
+        profile.models = normalizeModels(input.models);
+      }
+      profile.updatedAt = new Date().toISOString();
+      await writeRaw(metaPath, secretsPath, meta, secrets);
+      return toViewProfile(profile, secrets);
+    }
+
+    if (typeof input.name === 'string' || typeof input.displayName === 'string') {
+      profile.displayName = requireDisplayName(input);
+    }
+    const nextProtocol = input.protocol !== undefined ? normalizeProtocol(input.protocol) : profile.protocol;
+    const nextAuthType = input.authType ?? (input.mode ? modeToAuthType(input.mode) : profile.authType);
+    if (nextAuthType !== 'api_key') {
+      throw new Error('api key accounts cannot be converted to oauth');
+    }
+    if (input.env !== undefined) {
+      throw new Error('env is only supported for ACP providers');
+    }
+    if (typeof input.baseUrl === 'string') {
+      const normalizedBaseUrl = normalizeBaseUrl(input.baseUrl);
+      if (normalizedBaseUrl) profile.baseUrl = normalizedBaseUrl;
+      else delete profile.baseUrl;
+    }
+    if (input.protocol !== undefined) {
+      if (nextProtocol) profile.protocol = nextProtocol;
+      else delete profile.protocol;
+    }
+    if (input.models !== undefined) {
+      profile.models = normalizeModels(input.models);
+    }
+    if (typeof input.apiKey === 'string' && input.apiKey.trim()) {
+      setStoredApiKey(storageRoot, secrets, profile.id, input.apiKey.trim());
+      profile.authType = 'api_key';
+    }
+    profile.updatedAt = new Date().toISOString();
+    await writeRaw(metaPath, secretsPath, meta, secrets);
+    return toViewProfile(profile, secrets);
+  });
+}
+
+export async function activateProviderProfile(
+  projectRoot: string,
+  provider: ProviderProfileProvider,
+  profileId: string,
+): Promise<void> {
+  await withProviderStoreLock(projectRoot, async (storageRoot) => {
+    const { meta, secrets, metaPath, secretsPath } = await readRawAtStorageRoot(storageRoot);
+    const profile = findProfile(meta, profileId);
+    if (!profile) throw new Error('profile not found');
+    assertProviderSelector(profile, provider);
+    const client = resolveClientFromSelector(provider, profile);
+    if (!client) {
+      throw new Error('client selector is required to bind an api_key account');
+    }
+    if (profile.kind === 'builtin') {
+      meta.bootstrapBindings[client] = {
+        enabled: true,
+        mode: 'oauth',
+        accountRef: builtinAccountIdForClient(client),
+      };
+    } else {
+      meta.bootstrapBindings[client] = {
+        enabled: true,
+        mode: 'api_key',
+        accountRef: profile.id,
+      };
+    }
+    await writeRaw(metaPath, secretsPath, meta, secrets);
+  });
+}
+
+export async function deleteProviderProfile(
+  projectRoot: string,
+  provider: ProviderProfileProvider,
+  profileId: string,
+): Promise<void> {
+  await withProviderStoreLock(projectRoot, async (storageRoot) => {
+    const { meta, secrets, metaPath, secretsPath } = await readRawAtStorageRoot(storageRoot);
+    const profile = findProfile(meta, profileId);
+    if (!profile) throw new Error('profile not found');
+    assertProviderSelector(profile, provider);
+    if (profile.kind === 'builtin') {
+      throw new Error('builtin provider cannot be deleted');
+    }
+    const boundAgentIds = await collectRuntimeCatsBoundToProfileAcrossRoots(projectRoot, profileId);
+    if (boundAgentIds.length > 0) {
+      throw new Error(`provider profile "${profileId}" is still referenced by runtime agents: ${boundAgentIds.join(', ')}`);
+    }
+    if (isReferencedByBootstrapBindings(meta, profileId)) {
+      throw new Error(`provider profile "${profileId}" is still referenced by bootstrap bindings`);
+    }
+    meta.providers = meta.providers.filter((item) => item.id !== profileId);
+    clearStoredApiKey(secrets, profileId);
+    clearStoredEnv(secrets, profileId);
+    await writeRaw(metaPath, secretsPath, meta, secrets);
+  });
+}
+
+export async function getProviderProfile(
+  projectRoot: string,
+  provider: ProviderProfileProvider,
+  profileId: string,
+): Promise<ProviderProfileView | null> {
+  return withProviderStoreLock(projectRoot, async (storageRoot) => {
+    const { meta, secrets, metaPath, secretsPath, dirty } = await readRawAtStorageRoot(storageRoot);
+    if (dirty) await writeRaw(metaPath, secretsPath, meta, secrets);
+    const profile = findProfile(meta, profileId);
+    if (!profile) return null;
+    assertProviderSelector(profile, provider);
+    return toViewProfile(profile, secrets);
+  });
+}
+
+function toRuntimeProviderProfile(
+  profile: ProviderProfileMeta,
+  secrets: ProviderProfilesSecretsFile,
+): RuntimeProviderProfile | null {
+  if (profile.kind === 'acp') {
+    const env = normalizeACPEnvEntries(resolveStoredEnv(secrets.profiles[profile.id]), profile.modelAccessMode, {
+      strict: false,
+    }).env;
+    return {
+      id: profile.id,
+      kind: 'acp',
+      authType: 'none',
+      protocol: 'acp',
+      ...(profile.command ? { command: profile.command } : {}),
+      ...(profile.args ? { args: profile.args } : {}),
+      ...(profile.cwd ? { cwd: profile.cwd } : {}),
+      ...(env ? { env } : {}),
+      ...(profile.modelAccessMode ? { modelAccessMode: profile.modelAccessMode } : {}),
+      ...(profile.defaultModelProfileRef ? { defaultModelProfileRef: profile.defaultModelProfileRef } : {}),
+    };
+  }
+  if (profile.kind === 'api_key') {
+    const apiKey = resolveStoredApiKey(secrets.profiles[profile.id]);
+    if (!apiKey) return null;
+    return {
+      id: profile.id,
+      kind: 'api_key',
+      authType: 'api_key',
+      ...(profile.protocol ? { protocol: profile.protocol } : {}),
+      ...(profile.baseUrl ? { baseUrl: profile.baseUrl } : {}),
+      ...(profile.models ? { models: profile.models } : {}),
+      apiKey,
+    };
+  }
+
+  return {
+    id: profile.id,
+    kind: 'builtin',
+    authType: 'oauth',
+    client: profile.client,
+    ...(profile.protocol ? { protocol: profile.protocol } : {}),
+    ...(profile.models ? { models: profile.models } : {}),
+  };
+}
+
+function resolveBuiltinFromProtocol(protocol: 'anthropic' | 'openai' | 'google'): ProviderProfileMeta {
+  const client: BuiltinAccountClient =
+    protocol === 'anthropic' ? 'anthropic' : protocol === 'openai' ? 'openai' : 'google';
+  return resolveBuiltinFromClient(client);
+}
+
+function resolveBuiltinFromClient(client: BuiltinAccountClient): ProviderProfileMeta {
+  const id = builtinAccountIdForClient(client);
+  const spec = BUILTIN_ACCOUNT_SPECS.find((item) => item.id === id);
+  if (!spec) {
+    throw new Error(`builtin account "${id}" is not registered`);
+  }
+  return {
+    id,
+    displayName: spec.displayName,
+    kind: 'builtin',
+    authType: 'oauth',
+    builtin: true,
+    client,
+    ...(CLIENT_PROTOCOL_MAP[client] ? { protocol: CLIENT_PROTOCOL_MAP[client] } : {}),
+    models: [...spec.models],
+    createdAt: '',
+    updatedAt: '',
+  };
+}
+
+export async function resolveRuntimeProviderProfile(
+  projectRoot: string,
+  protocol: 'anthropic' | 'openai' | 'google',
+  preferredProfileId?: string,
+): Promise<RuntimeProviderProfile | null> {
+  const { meta, secrets, dirty } = await readRaw(projectRoot);
+  if (dirty) {
+    await withProviderStoreLock(projectRoot, async (storageRoot) => {
+      const normalized = await readRawAtStorageRoot(storageRoot);
+      if (normalized.dirty) {
+        await writeRaw(normalized.metaPath, normalized.secretsPath, normalized.meta, normalized.secrets);
+      }
+    });
+  }
+
+  const preferred = preferredProfileId ? findProfile(meta, preferredProfileId) : null;
+  if (preferred) {
+    return toRuntimeProviderProfile(preferred, secrets);
+  }
+
+  const bootstrapBinding = meta.bootstrapBindings[protocol];
+  if (bootstrapBinding?.mode === 'api_key') {
+    const boundProfile = bootstrapBinding.accountRef ? findProfile(meta, bootstrapBinding.accountRef) : undefined;
+    const runtime = boundProfile ? toRuntimeProviderProfile(boundProfile, secrets) : null;
+    if (runtime) return runtime;
+  }
+
+  const builtin = findProfile(meta, builtinAccountIdForClient(protocol));
+  if (builtin) {
+    return toRuntimeProviderProfile(builtin, secrets);
+  }
+
+  return toRuntimeProviderProfile(resolveBuiltinFromProtocol(protocol), secrets);
+}
+
+export async function resolveRuntimeProviderProfileForClient(
+  projectRoot: string,
+  client: BuiltinAccountClient,
+  preferredProfileId?: string,
+): Promise<RuntimeProviderProfile | null> {
+  const { meta, secrets, dirty } = await readRaw(projectRoot);
+  if (dirty) {
+    await withProviderStoreLock(projectRoot, async (storageRoot) => {
+      const normalized = await readRawAtStorageRoot(storageRoot);
+      if (normalized.dirty) {
+        await writeRaw(normalized.metaPath, normalized.secretsPath, normalized.meta, normalized.secrets);
+      }
+    });
+  }
+
+  const preferred = preferredProfileId ? findProfile(meta, preferredProfileId) : null;
+  if (preferred) {
+    return toRuntimeProviderProfile(preferred, secrets);
+  }
+
+  const bootstrapBinding = meta.bootstrapBindings[client];
+  if (bootstrapBinding?.mode === 'api_key') {
+    const boundProfile = bootstrapBinding.accountRef ? findProfile(meta, bootstrapBinding.accountRef) : undefined;
+    const runtime = boundProfile ? toRuntimeProviderProfile(boundProfile, secrets) : null;
+    if (runtime) return runtime;
+  }
+
+  const builtin = findProfile(meta, builtinAccountIdForClient(client));
+  if (builtin) {
+    return toRuntimeProviderProfile(builtin, secrets);
+  }
+
+  return toRuntimeProviderProfile(resolveBuiltinFromClient(client), secrets);
+}
+
+export async function resolveRuntimeProviderProfileById(
+  projectRoot: string,
+  profileId: string,
+): Promise<RuntimeProviderProfile | null> {
+  const { meta, secrets, dirty } = await readRaw(projectRoot);
+  if (dirty) {
+    await withProviderStoreLock(projectRoot, async (storageRoot) => {
+      const normalized = await readRawAtStorageRoot(storageRoot);
+      if (normalized.dirty) {
+        await writeRaw(normalized.metaPath, normalized.secretsPath, normalized.meta, normalized.secrets);
+      }
+    });
+  }
+  const profile = findProfile(meta, profileId);
+  if (!profile) return null;
+  return toRuntimeProviderProfile(profile, secrets);
+}
+
+export async function resolveAnthropicRuntimeProfile(projectRoot: string): Promise<AnthropicRuntimeProfile> {
+  const runtime =
+    (await resolveRuntimeProviderProfile(projectRoot, 'anthropic')) ??
+    ({
+      id: builtinAccountIdForClient('anthropic'),
+      kind: 'builtin',
+      authType: 'oauth',
+      client: 'anthropic',
+    } satisfies RuntimeProviderProfile);
+
+  return {
+    id: runtime.id,
+    mode: authTypeToMode(runtime.authType),
+    ...(runtime.baseUrl ? { baseUrl: runtime.baseUrl } : {}),
+    ...(runtime.apiKey ? { apiKey: runtime.apiKey } : {}),
+  };
+}
+
+export async function resolveAnthropicRuntimeProfileById(
+  projectRoot: string,
+  profileId: string,
+): Promise<AnthropicRuntimeProfile | null> {
+  const runtime = await resolveRuntimeProviderProfileById(projectRoot, profileId);
+  if (!runtime) return null;
+  return {
+    id: runtime.id,
+    mode: authTypeToMode(runtime.authType),
+    ...(runtime.baseUrl ? { baseUrl: runtime.baseUrl } : {}),
+    ...(runtime.apiKey ? { apiKey: runtime.apiKey } : {}),
+  };
+}

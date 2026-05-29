@@ -1,0 +1,97 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+import type { ContextBudget } from '@openjiuwen/relay-shared';
+
+export type CodexAuthMode = 'oauth' | 'api_key' | 'auto';
+
+export interface ConfigSnapshot {
+  coCreator: {
+    name: string;
+    aliases: string[];
+    mentionPatterns: string[];
+    avatar?: string;
+    color?: {
+      primary: string;
+      secondary: string;
+    };
+  };
+  context: {
+    /** @deprecated Use perAgentBudgets for actual limits. This is assembleContext default. */
+    maxMessages: number;
+    /** @deprecated Use perAgentBudgets for actual limits. */
+    maxContentLength: number;
+    /** @deprecated Use perAgentBudgets for actual limits. This is assembleContext default, overridden per-agent at route time. */
+    maxTotalChars: number;
+    /** @deprecated Use perAgentBudgets for actual limits. */
+    maxPromptTokens: number;
+    note: string;
+  };
+  /** Per-agent context budgets (Phase 4.0) — the actual limits used at route time */
+  perAgentBudgets: Record<string, ContextBudget>;
+  cli: {
+    timeoutMs: number;
+    killGraceMs: number;
+    codexSandboxMode: 'read-only' | 'workspace-write' | 'danger-full-access';
+    codexApprovalPolicy: 'untrusted' | 'on-failure' | 'on-request' | 'never';
+  };
+  storage: {
+    messageTTL: string;
+    threadTTL: string;
+    taskTTL: string;
+    maxMessages: number;
+    maxThreads: number;
+  };
+  upload: {
+    maxFileSize: string;
+    maxFiles: number;
+  };
+  server: {
+    port: number;
+    host: string;
+    redis: 'connected' | 'memory';
+  };
+  agents: Record<
+    string,
+    {
+      displayName: string;
+      provider: string;
+      model: string;
+      mcpSupport: boolean;
+      accountRef?: string;
+      providerProfileId?: string;
+    }
+  >;
+  a2a: {
+    enabled: boolean;
+    maxDepth: number;
+  };
+  /** Memory store settings (F3-lite) */
+  memory: {
+    enabled: boolean;
+    maxKeysPerThread: number;
+  };
+  /** Governance settings (4-D-lite) */
+  governance: {
+    degradationEnabled: boolean;
+    doneTimeoutMs: number;
+    heartbeatIntervalMs: number;
+  };
+  /** Deliberate mode status (4-E) */
+  deliberate: {
+    status: 'types_only';
+  };
+  codexExecution: {
+    model: string;
+    authMode: CodexAuthMode;
+    passModelArg: boolean;
+  };
+  /** F102 evidence/summary feature flags (Phase G) */
+  f102: {
+    embedMode: string;
+    abstractiveEnabled: boolean;
+  };
+}

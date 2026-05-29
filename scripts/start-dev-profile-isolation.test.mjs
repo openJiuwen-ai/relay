@@ -1,0 +1,178 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { describe, it } from 'node:test';
+
+const ROOT = resolve(process.cwd());
+const SYNC_SCRIPT = resolve(ROOT, 'scripts/sync-to-opensource.sh');
+
+function createSandbox(envFile = '') {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-start-dev-profile-'));
+  mkdirSync(join(dir, 'scripts'), { recursive: true });
+  cpSync(resolve(ROOT, 'scripts/start-dev.sh'), join(dir, 'scripts', 'start-dev.sh'));
+
+  const downloadOverrides = resolve(ROOT, 'scripts/download-source-overrides.sh');
+  if (existsSync(downloadOverrides)) {
+    cpSync(downloadOverrides, join(dir, 'scripts', 'download-source-overrides.sh'));
+  }
+
+  if (envFile) {
+    writeFileSync(join(dir, '.env'), envFile, 'utf8');
+  }
+
+  return dir;
+}
+
+function runSourceOnly({ sandboxDir, env = {}, extraArgs = [] }) {
+  const command = [
+    `source scripts/start-dev.sh --source-only ${extraArgs.join(' ')}`,
+    'printf "PROFILE=%s\\nASR=%s\\nPROXY=%s\\nTTS=%s\\nLLM=%s\\nEMBED=%s\\nTTL=%s\\nREDIS_PROFILE=%s\\n" "$PROFILE" "$ASR_ENABLED" "$ANTHROPIC_PROXY_ENABLED" "$TTS_ENABLED" "$LLM_POSTPROCESS_ENABLED" "${EMBED_ENABLED:-}" "$MESSAGE_TTL_SECONDS" "$REDIS_PROFILE"',
+  ].join('; ');
+
+  return spawnSync('bash', ['-lc', command], {
+    cwd: sandboxDir,
+    env: {
+      PATH: process.env.PATH ?? '',
+      HOME: process.env.HOME ?? '',
+      TERM: process.env.TERM ?? 'xterm-256color',
+      ...env,
+    },
+    encoding: 'utf8',
+  });
+}
+
+describe('start-dev strict profile isolation', () => {
+  it('ignores inherited shell env for profile-controlled vars when strict mode is on', () => {
+    const sandboxDir = createSandbox();
+    try {
+      const result = runSourceOnly({
+        sandboxDir,
+        env: {
+          OFFICE_CLAW_STRICT_PROFILE_DEFAULTS: '1',
+          ANTHROPIC_PROXY_ENABLED: '1',
+          ASR_ENABLED: '1',
+          TTS_ENABLED: '1',
+          LLM_POSTPROCESS_ENABLED: '1',
+          EMBED_ENABLED: '1',
+          MESSAGE_TTL_SECONDS: '0',
+          THREAD_TTL_SECONDS: '0',
+          TASK_TTL_SECONDS: '0',
+          REDIS_PROFILE: 'dev',
+        },
+        extraArgs: ['--', '--profile=opensource'],
+      });
+
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.match(result.stdout, /PROFILE=opensource/);
+      assert.match(result.stdout, /ASR=0/);
+      assert.match(result.stdout, /PROXY=0/);
+      assert.match(result.stdout, /TTS=0/);
+      assert.match(result.stdout, /LLM=0/);
+      assert.match(result.stdout, /EMBED=/);
+      assert.match(result.stdout, /TTL=86400/);
+      assert.match(result.stdout, /REDIS_PROFILE=opensource/);
+    } finally {
+      rmSync(sandboxDir, { recursive: true, force: true });
+    }
+  });
+
+  it('still allows .env overrides after strict sanitize', () => {
+    const sandboxDir = createSandbox('ASR_ENABLED=1\nMESSAGE_TTL_SECONDS=123\nREDIS_PROFILE=custom\n');
+    try {
+      const result = runSourceOnly({
+        sandboxDir,
+        env: {
+          OFFICE_CLAW_STRICT_PROFILE_DEFAULTS: '1',
+          ANTHROPIC_PROXY_ENABLED: '1',
+          ASR_ENABLED: '1',
+          EMBED_ENABLED: '1',
+          MESSAGE_TTL_SECONDS: '0',
+          REDIS_PROFILE: 'dev',
+        },
+        extraArgs: ['--', '--profile=opensource'],
+      });
+
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.match(result.stdout, /PROFILE=opensource/);
+      assert.match(result.stdout, /ASR=1/);
+      assert.match(result.stdout, /EMBED=/);
+      assert.match(result.stdout, /TTL=123/);
+      assert.match(result.stdout, /REDIS_PROFILE=custom/);
+    } finally {
+      rmSync(sandboxDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('sync-to-opensource public launch transforms', { skip: !existsSync(SYNC_SCRIPT) }, () => {
+  it('exports opensource-pinned direct launch wrappers and runtime startup', () => {
+    const result = spawnSync('bash', [SYNC_SCRIPT, '--dry-run', '--yes'], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        PATH: process.env.PATH ?? '',
+        HOME: process.env.HOME ?? '',
+        TERM: process.env.TERM ?? 'xterm-256color',
+      },
+      encoding: 'utf8',
+      maxBuffer: 20 * 1024 * 1024,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const output = `${result.stdout}\n${result.stderr}`;
+    const match = output.match(/Export (?:complete|preserved) at:[^\n]*\n\s*(\/[^\n]+)/);
+    assert.ok(match?.[1], output);
+
+    const exportDir = match[1].trim();
+    try {
+      const pkg = JSON.parse(readFileSync(resolve(exportDir, 'package.json'), 'utf8'));
+      const runtimeScript = readFileSync(resolve(exportDir, 'scripts/runtime-worktree.sh'), 'utf8');
+
+      assert.match(pkg.scripts['dev:direct'], /OFFICE_CLAW_STRICT_PROFILE_DEFAULTS=1/);
+      assert.match(pkg.scripts['start:direct'], /OFFICE_CLAW_STRICT_PROFILE_DEFAULTS=1/);
+      assert.match(pkg.scripts['dev:direct'], /--profile=opensource/);
+      assert.match(pkg.scripts['start:direct'], /--profile=opensource/);
+      assert.equal(
+        pkg.scripts['check:start-profile-isolation'],
+        'node --test scripts/start-dev-profile-isolation.test.mjs',
+      );
+      assert.equal(existsSync(resolve(exportDir, 'office-claw-template.json')), true);
+      assert.match(pkg.scripts.check, /check:start-profile-isolation/);
+      assert.equal(existsSync(resolve(exportDir, 'scripts/download-source-overrides.sh')), true);
+      assert.equal(existsSync(resolve(exportDir, 'scripts/start-dev-profile-isolation.test.mjs')), true);
+
+      assert.match(
+        runtimeScript,
+        /exec env OFFICE_CLAW_STRICT_PROFILE_DEFAULTS=1 \.\/scripts\/start-dev\.sh --prod-web --profile=opensource/,
+      );
+
+      const envSource = spawnSync(
+        'bash',
+        ['-lc', 'set -euo pipefail\nset -a\nsource ./.env.example\nset +a\nprintf "%s" "$NEXT_PUBLIC_BRAND_NAME"'],
+        {
+          cwd: exportDir,
+          env: {
+            ...process.env,
+            PATH: process.env.PATH ?? '',
+            HOME: process.env.HOME ?? '',
+            TERM: process.env.TERM ?? 'xterm-256color',
+          },
+          encoding: 'utf8',
+        },
+      );
+
+      assert.equal(envSource.status, 0, envSource.stderr || envSource.stdout);
+      assert.equal(envSource.stdout.trim(), 'OfficeClaw');
+    } finally {
+      rmSync(exportDir, { recursive: true, force: true });
+    }
+  });
+});

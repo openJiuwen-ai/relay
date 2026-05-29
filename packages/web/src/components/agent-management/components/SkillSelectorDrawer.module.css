@@ -1,0 +1,361 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+/* Drawer backdrop */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--overlay-backdrop-strong);
+  animation: fadeIn 200ms ease-out forwards;
+}
+
+/* Drawer panel */
+.drawer {
+  position: absolute;
+  right: 0;
+  top: var(--content-header-height, 36px);
+  height: calc(100% - var(--content-header-height, 36px));
+  width: 700px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--modal-border);
+  background: var(--modal-surface);
+  box-shadow: var(--modal-shadow);
+  animation: slideInRight 300ms ease-out forwards;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--panel-divider);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--modal-title-text);
+  margin: 0;
+}
+
+.closeButton {
+  display: inline-flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  color: var(--modal-close-icon);
+  transition: background-color 200ms ease, color 200ms ease;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.closeButton:hover {
+  background: var(--modal-close-hover-bg);
+  color: var(--modal-close-icon-hover);
+}
+
+/* Body */
+.body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 1rem 1.25rem;
+  gap: 1rem;
+}
+
+.searchWrapper {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-bottom: 56px;
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  font-size: 13px;
+  color: var(--modal-empty-text);
+}
+
+/* Footer */
+.footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1.25rem;
+  border-top: 1px solid var(--panel-divider);
+  background: var(--modal-surface);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+/* Tabs */
+.tabsWrapper {
+  flex-shrink: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.tab {
+  height: 32px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 200ms ease;
+  position: relative;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tabActive {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.tabActive::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--text-accent);
+  border-radius: 1px;
+}
+
+/* Categories - shared for 我的技能 and 技能广场 */
+.categoriesWrapper {
+  flex-shrink: 0;
+  padding-bottom: 16px;
+}
+
+.categories {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.categoryItem {
+  display: flex;
+  align-items: center;
+}
+
+.categoryDivider {
+  width: 1px;
+  height: 16px;
+  background: #dbdbdb;
+  margin-right: 16px;
+}
+
+.categoryTab {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 200ms ease;
+}
+
+.categoryTab:hover {
+  color: var(--text-primary);
+}
+
+.categoryTabActive {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Skill grid - 2 columns */
+.skillGrid {
+  display: grid;
+  gap: var(--space-7);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+}
+
+
+/* Skill card - matches SkillsTab card exactly */
+.card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 106px;
+  gap: var(--space-5);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #E5E5E5;
+  background: #FAFAFA;
+}
+
+.card:hover {
+  border-color: var(--text-accent);
+  background: white;
+}
+
+.cardSelected {
+  background: #F0F7FF;
+  border-color: transparent;
+}
+
+.cardSelected:hover {
+  background: #F0F7FF;
+}
+
+/* Card header - matches SkillsTab header */
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+}
+
+.cardContent {
+  min-width: 0;
+  flex: 1;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text-secondary);
+  background: #E6E6E6;
+  border-radius: 4px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.cardDescription {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--font-size-md);
+  line-height: 22px;
+  color: var(--text-secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  margin: 0;
+  margin-top: var(--space-3);
+}
+
+/* Checkbox */
+.checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--text-muted);
+  color: transparent;
+  transition: all 200ms ease;
+  flex-shrink: 0;
+}
+
+.checkboxChecked {
+  background: var(--text-accent);
+  border-color: var(--text-accent);
+  color: white;
+}
+
+/* Card footer with install button */
+.cardFooter {
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.installButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 500;
+  color: var(--text-accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.installButton:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Load more */
+.loadMore {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
+}
+
+@media (max-width: 480px) {
+  .skillGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}

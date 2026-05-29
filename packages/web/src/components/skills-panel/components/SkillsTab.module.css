@@ -1,0 +1,106 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+.skillGrid {
+  display: grid;
+  gap: var(--space-7);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+.card {
+  display: flex;
+  justify-content: space-between;
+  min-height: 194px;
+  flex-direction: column;
+  gap: var(--space-7);
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+}
+
+.content {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  line-height: 24px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.description {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 44px;
+  font-size: var(--font-size-md);
+  line-height: 22px;
+  color: var(--text-secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.footer {
+  margin-top: auto;
+}
+
+.installButton {
+  display: inline-flex;
+  min-height: var(--control-height-touch);
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-md);
+  line-height: 1;
+  font-weight: var(--font-weight-medium);
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
+    color 200ms ease;
+  text-decoration: none;
+}
+
+.installButtonPrimary:hover,
+.installButtonPrimary:focus-visible {
+  text-decoration: underline;
+}
+
+.installButtonPrimary {
+  color: var(--text-accent);
+}
+
+.installButtonSuccess {
+  color: var(--text-disabled);
+}
+
+.installButtonMuted {
+  color: var(--text-muted);
+}
+
+@media (min-width: 1024px) {
+  .skillGrid {
+    gap: var(--space-8);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 640px) {
+  .installButton {
+    min-height: var(--control-height-xs);
+  }
+}
+
+@media (max-width: 767px) {
+  .card {
+    min-height: 204px;
+    gap: var(--space-6);
+  }
+}

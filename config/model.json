@@ -1,0 +1,70 @@
+{
+  "maas-data": [
+    {
+      "id": "deepseek-v3.1-terminus",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "qwen3-30b-a3b",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "qwen3-coder-480b-a35b-instruct",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "qwen3-32b",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "Kimi-K2",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "glm-5",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "deepseek-v3.2",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "qwen3-235b-a22b",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "longcat-flash-chat",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "DeepSeek-V3",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    },
+    {
+      "id": "deepseek-r1-250528",
+      "object": "list",
+      "created": 0,
+      "owned_by": "system"
+    }
+  ]
+}

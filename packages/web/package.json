@@ -1,0 +1,126 @@
+{
+  "name": "@openjiuwen/relay-web",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./components": {
+      "import": "./dist/components.js",
+      "types": "./dist/public-api/components.d.ts"
+    },
+    "./config": {
+      "import": "./dist/config.js",
+      "types": "./dist/public-api/config.d.ts"
+    },
+    "./constants": {
+      "import": "./dist/constants.js",
+      "types": "./dist/public-api/constants.d.ts"
+    },
+    "./hooks": {
+      "import": "./dist/hooks.js",
+      "types": "./dist/public-api/hooks.d.ts"
+    },
+    "./pages": {
+      "import": "./dist/pages.js",
+      "types": "./dist/public-api/pages.d.ts"
+    },
+    "./services": {
+      "import": "./dist/services.js",
+      "types": "./dist/public-api/services.d.ts"
+    },
+    "./shared": {
+      "import": "./dist/shared.js",
+      "types": "./dist/public-api/shared.d.ts"
+    },
+    "./stores": {
+      "import": "./dist/stores.js",
+      "types": "./dist/public-api/stores.d.ts"
+    },
+    "./lib": {
+      "import": "./dist/lib.js",
+      "types": "./dist/public-api/lib.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils.js",
+      "types": "./dist/public-api/utils.d.ts"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:npm": "node scripts/build-npm.mjs",
+    "generate:public-api": "node scripts/generate-web-public-api.mjs",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "preview": "vite preview",
+    "start": "vite preview",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "node ../../node_modules/vitest/vitest.mjs run --config vite.config.ts"
+  },
+  "dependencies": {
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.39.16",
+    "@dagrejs/dagre": "^2.0.4",
+    "@openjiuwen/relay-shared": "workspace:*",
+    "@xyflow/react": "^12.10.1",
+    "codemirror": "^6.0.2",
+    "docx-preview": "^0.3.6",
+    "exceljs": "^4.4.0",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.28.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "socket.io-client": "^4.7.0",
+    "zustand": "^4.5.0"
+  },
+  "optionalDependencies": {
+    "@ricky0123/vad-web": "^0.0.30",
+    "esbuild-wasm": "^0.27.3"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0",
+    "react-dom": ">=18.2.0",
+    "react-router-dom": ">=6.28.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.15",
+    "@types/dagre": "^0.7.54",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^5.0.9",
+    "autoprefixer": "^10.4.0",
+    "jsdom": "^28.0.0",
+    "postcss": "^8.4.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.3",
+    "vite": "^6.0.11",
+    "vitest": "^4.0.18"
+  }
+}

@@ -1,0 +1,98 @@
+# F102 Memory Eval Corpus
+# Tests: Recall@5 on real project queries
+# AC-B7: 15 cases including historical Hindsight failure patterns
+#
+# Note: Index uses kind-priority (feature > decision > plan > lesson).
+# When multiple docs share the same anchor via feature_ids, the feature
+# spec wins. Queries here target feature spec titles/summaries.
+
+queries:
+  # --- Recall cases: exact anchor lookup (bypass FTS) ---
+  - id: R-01
+    query: "F042"
+    expected_anchors: [F042]
+    note: "Exact anchor lookup must resolve"
+
+  - id: R-02
+    query: "F102"
+    expected_anchors: [F102]
+    note: "Current feature self-reference"
+
+  - id: R-03
+    query: "F073"
+    expected_anchors: [F073]
+    note: "SOP auto guardian anchor"
+
+  - id: R-04
+    query: "F075"
+    expected_anchors: [F075]
+    note: "Leaderboard anchor"
+
+  # --- Recall cases: FTS title/summary search ---
+  - id: R-05
+    query: "adapter"
+    expected_anchors: [F102]
+    note: "FTS match on title (Adapter 化重構)"
+
+  - id: R-06
+    query: "gateway"
+    expected_anchors: [F088]
+    note: "FTS match on title for Feishu gateway plan"
+
+  - id: R-07
+    query: "leaderboard"
+    expected_anchors: [F075]
+    note: "FTS match on title"
+
+  - id: R-08
+    query: "self evolution"
+    expected_anchors: [F100]
+    note: "FTS match on title"
+
+  - id: R-09
+    query: "signal study"
+    expected_anchors: [F091]
+    note: "FTS match on plan title"
+
+  - id: R-10
+    query: "IEvidenceStore"
+    expected_anchors: [F102]
+    note: "FTS match on F102 feature spec title (contains IEvidenceStore)"
+
+  # --- Precision cases: must not return noise ---
+  - id: P-01
+    query: "F042"
+    must_not_contain_paths: ["archive/", "mailbox/"]
+    note: "Must not return archived or mailbox copies"
+
+  - id: P-02
+    query: "leaderboard"
+    must_not_contain_paths: ["archive/"]
+    note: "Should not return archived copies"
+
+  # --- Hindsight failure patterns (our index should do better) ---
+  - id: HF-01
+    query: "adapter IEvidenceStore"
+    expected_anchors: [F102]
+    note: "Hindsight couldn't find our own spec — both terms in F102 title"
+
+  - id: HF-02
+    query: "signal study"
+    expected_anchors: [F091]
+    note: "Hindsight returned old discussion threads instead of the spec"
+
+  - id: HF-03
+    query: "auto guardian SOP"
+    expected_anchors: [F073]
+    note: "F073 feature spec title: SOP Auto-Guardian"
+
+  # --- Phase C: semantic cases (lexical might miss, embedding should catch) ---
+  - id: S-01
+    query: "记忆组件怎么存储"
+    expected_anchors: [F102]
+    note: "Chinese query for memory storage — needs semantic match"
+
+  - id: S-02
+    query: "how does the cat communication work"
+    expected_anchors: [F088]
+    note: "English paraphrase — FTS might miss, embedding should catch"

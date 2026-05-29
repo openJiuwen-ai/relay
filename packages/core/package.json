@@ -1,0 +1,51 @@
+{
+  "name": "@openjiuwen/relay-core",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./plugin": {
+      "import": "./dist/plugin/index.js",
+      "types": "./dist/plugin/index.d.ts"
+    },
+    "./agent": {
+      "import": "./dist/agent/index.js",
+      "types": "./dist/agent/index.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils/index.js",
+      "types": "./dist/utils/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "pnpm clean && tsc",
+    "prepare": "tsc",
+    "dev": "tsc --watch",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openjiuwen/relay-shared": "workspace:*"
+  },
+  "peerDependencies": {
+    "@openjiuwen/relay-api-server-contracts": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@openjiuwen/relay-api-server-contracts": "workspace:*",
+    "typescript": "^5.3.3"
+  }
+}

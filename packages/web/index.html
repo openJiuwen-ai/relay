@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN" data-ui-theme="business">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#E29578" />
+    <meta name="application-name" content="OfficeClaw" />
+    <meta name="description" content="Your AI team collaboration space" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="OfficeClaw" />
+    <link rel="icon" href="/images/lobster.svg" />
+    <link rel="apple-touch-icon" href="/images/lobster.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>OfficeClaw</title>
+    <script>
+      (function () {
+        try {
+          var key = 'office-claw-theme';
+          var legacyKey = 'clowder-ai-theme';
+          var defaultTheme = 'business';
+          var theme = '';
+          var cookieParts = document.cookie ? document.cookie.split(';') : [];
+          function readFromCookie(k) {
+            var prefix = k + '=';
+            for (var i = 0; i < cookieParts.length; i += 1) {
+              var part = cookieParts[i] ? cookieParts[i].trim() : '';
+              if (part.indexOf(prefix) !== 0) continue;
+              try {
+                return decodeURIComponent(part.slice(prefix.length));
+              } catch (_) {
+                return '';
+              }
+            }
+            return '';
+          }
+          theme = readFromCookie(key) || readFromCookie(legacyKey);
+          if (!theme) {
+            try {
+              theme = localStorage.getItem(key) || localStorage.getItem(legacyKey) || '';
+            } catch (_) {
+              theme = '';
+            }
+          }
+          if (theme !== 'warm' && theme !== 'business' && theme !== 'dark') {
+            theme = theme === 'default' ? defaultTheme : document.documentElement.dataset.uiTheme || defaultTheme;
+          }
+          document.documentElement.dataset.uiTheme = theme;
+          try {
+            localStorage.removeItem(legacyKey);
+            localStorage.setItem(key, theme);
+          } catch (_) {}
+          try {
+            document.cookie = legacyKey + '=; path=/; max-age=0; SameSite=Lax';
+          } catch (_) {}
+          document.cookie =
+            key +
+            '=' +
+            encodeURIComponent(theme) +
+            '; path=/; max-age=' +
+            31536000 +
+            '; SameSite=Lax';
+        } catch (_) {
+          document.documentElement.dataset.uiTheme = 'business';
+        }
+      })();
+    </script>
+  </head>
+  <body class="m-0 min-h-dvh w-full overflow-x-hidden overflow-y-auto">
+    <div id="root" class="min-h-dvh"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24.000000" height="24.000000" fill="none" customFrame="#000000">
+	<defs>
+		<linearGradient id="paint_linear_2" x1="24" x2="-3.81469727e-06" y1="13.2000008" y2="14.4000053" gradientUnits="userSpaceOnUse">
+			<stop stop-color="rgb(112,232,109)" offset="0.186540991" stop-opacity="1" />
+			<stop stop-color="rgb(54,210,93)" offset="1" stop-opacity="1" />
+		</linearGradient>
+	</defs>
+	<g id="组合 91334000">
+		<circle id="椭圆 2628" cx="12" cy="12" r="12" fill="url(#paint_linear_2)" />
+		<path id="椭圆 2631" d="M16.8513 15.1785C15.5483 16.4814 13.7483 17.2873 11.7601 17.2873C9.77189 17.2873 7.97189 16.4814 6.66895 15.1785" stroke="rgb(20,65,31)" stroke-linecap="round" stroke-width="1.20000005" />
+		<circle id="椭圆 2630" cx="8.1796875" cy="9.60009766" r="1.5" fill="rgb(20,65,31)" />
+		<circle id="椭圆 2630" cx="1.5" cy="1.5" r="1.5" fill="rgb(20,65,31)" transform="matrix(-1,0,0,1,17.418,8.1001)" />
+	</g>
+</svg>

@@ -1,0 +1,52 @@
+{
+  "name": "@openjiuwen/relay-storage-sqlite",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./evidence": {
+      "import": "./dist/evidence/sqlite.js",
+      "types": "./dist/evidence/sqlite.d.ts"
+    },
+    "./scheduler": {
+      "import": "./dist/scheduler/sqlite.js",
+      "types": "./dist/scheduler/sqlite.d.ts"
+    },
+    "./authorization": {
+      "import": "./dist/authorization/index.js",
+      "types": "./dist/authorization/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "pnpm clean && tsc",
+    "prepare": "tsc",
+    "dev": "tsc --watch",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3",
+    "@openjiuwen/relay-api-server-contracts": "workspace:*",
+    "better-sqlite3": "^12.6.2",
+    "sqlite-vec": "^0.1.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}

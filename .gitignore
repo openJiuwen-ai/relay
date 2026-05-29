@@ -1,0 +1,156 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+docs/.doc-index.json
+build/
+.next/
+jiuwenclaw.egg-info
+
+# PWA generated service worker files
+packages/web/public/sw.js
+packages/web/public/sw.js.map
+packages/web/public/workbox-*.js
+packages/web/public/workbox-*.js.map
+packages/web/public/swe-worker-*.js
+packages/web/public/worker-*.js
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE & AI tools
+.idea/
+.vscode/
+.cursor/
+.agent/
+.agents/
+.augment/
+.codex/
+.gemini/
+.kiro/
+.trae/
+.dare/*
+!.dare/config.json
+.codex/
+.gemini/
+*.swp
+*.swo
+.venv/
+.history/
+.claude
+
+# MCP config (personal, contains local URLs)
+.mcp.json
+
+# F041 capabilities local state (bootstrapped per machine)
+.office-claw/
+
+# Claude Code skills — tracked symlinks stay in repo; plugin-generated ones do not
+.claude/skills/pencil-renderer
+.claude/skills/pencil-to-code
+
+# Claude local project memory / backup files
+.claude/projects/
+.claude/settings.json.bak
+.claude/settings.json.abtest-backup
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Browser/automation files
+cookies.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Lockfiles (workspace uses pnpm only)
+packages/**/package-lock.json
+
+# Test coverage
+coverage/
+
+# Uploaded files (keep dir, ignore contents)
+packages/api/uploads/*
+!packages/api/uploads/.gitkeep
+/uploads/
+workspace/
+
+# Runtime data (audit logs, etc.)
+data/
+test-audit-logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Local demo/video scratch exports
+assets/demo-videos/
+assets/screenshots/
+
+# Local external repo scratch space
+gitnexus/
+
+# ASR runtime artifact (mlx-audio writes transcript.txt to CWD)
+transcript.txt
+
+# Redis dump
+dump.rdb
+dump.rdb.backup*
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Root-level skills/ (Pencil plugin generated)
+/skills/
+docs/bug-report/werewolf-investigation/poster-screenshot.png
+.worktrees/
+/vendor/jiuwenclaw/
+/vendor/jiuwenclaw.tmp-*/
+/vendor/jiuwenclaw.backup-*/
+
+# Raw avatar source images (large, pre-sliced originals)
+assets/avatars/raw/
+
+# Logo candidates (user has not finalized one yet)
+assets/logos/
+
+# Private/confidential documents (contracts, legal, etc.)
+private/
+
+# Voice audition output (F066 — generated wav files, local only)
+/voice-audition/
+
+# Large media files (GitHub 100MB limit)
+*.mov
+*.mp4
+*.avi
+*.mkv
+
+# Playwright MCP cache
+.playwright-mcp/
+
+# SQLite runtime databases (Hindsight evidence store)
+evidence.sqlite
+evidence.sqlite-shm
+evidence.sqlite-wal
+
+# Temporary data files (browser automation artifacts)
+forzadata-*.txt
+__pycache__/
+*.pyc
+*.egg-info/
+
+.opencode
+.playwright-cli
+.playwright
+secure-config-nodejs
+
+/memory
+vendor
+office-claw-skills/.playwright-browsers

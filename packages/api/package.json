@@ -1,0 +1,100 @@
+{
+  "name": "@openjiuwen/relay-api-server",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "dist/index.js",
+  "bin": {
+    "office-claw-api-server": "./dist/cli.js",
+    "relay-api-server": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    },
+    "./dist/*": {
+      "import": "./dist/*",
+      "types": "./dist/*.d.ts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch src/cli.ts",
+    "build": "pnpm clean && pnpm --filter @openjiuwen/relay-shared build && pnpm --filter @openjiuwen/relay-core build && pnpm --filter @openjiuwen/relay-api-server-contracts build && tsc",
+    "start": "node dist/cli.js",
+    "test": "pnpm run build && OFFICE_CLAW_DISABLE_SHARED_STATE_PREFLIGHT=1 node --test --test-timeout=60000 test/*.test.js test/**/*.test.js",
+    "test:public": "pnpm run build && OFFICE_CLAW_DISABLE_SHARED_STATE_PREFLIGHT=1 node --test --test-concurrency=1 $(ls test/*.test.js test/**/*.test.js 2>/dev/null | grep -v 'redis-' | grep -v 'concurrent-fault-drill' | grep -v 'task-progress-store' | grep -v 'session-strategy-phase3' | grep -v 'signal-article-store' | grep -v 'persistence-fault-drill' | grep -v 'cursor-store-atomicity' | grep -v 'workflow-sop-store' | grep -v 'dare-agent-service' | grep -v 'dare-l1-acceptance' | grep -v 'codex-agent-service' | grep -v 'claude-settings-hooks\\.test' | grep -v 'game-store\\.test' | grep -v 'test/memory/' | grep -v 'cross-cat-context\\.test' | grep -v 'thread-wiring\\.test' | grep -v 'integration/wiring\\.test' | grep -v 'antigravity-cdp-client\\.test' | grep -v 'shared-state-wiring\\.test' | grep -v 'signal-fetcher-launchd' | grep -v 'reflection-capsule-m3' | grep -v 'workspace-project-context\\.test' | tr '\\n' ' ')",
+    "test:antigravity-smoke": "RUN_ANTIGRAVITY_SMOKE=true pnpm run build && RUN_ANTIGRAVITY_SMOKE=true node --test test/antigravity-smoke.test.js",
+    "rebuild-index": "node dist/scripts/rebuild-index.js",
+    "test:redis": "bash ./scripts/run-isolated-redis-tests.sh",
+    "test:redis:repeat": "bash ./scripts/run-isolated-redis-tests.sh --repeat 2",
+    "test:integration": "node --test test/integration/*.test.js",
+    "lint": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@openjiuwen/relay-core": "workspace:*",
+    "@openjiuwen/relay-api-server-contracts": "workspace:*",
+    "@openjiuwen/relay-shared": "workspace:*",
+    "@fastify/cookie": "9.4.0",
+    "@fastify/cors": "^9.0.0",
+    "@fastify/multipart": "8",
+    "@fastify/static": "7",
+    "@fastify/websocket": "^10.0.0",
+    "@huggingface/transformers": "^3",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@wecom/aibot-node-sdk": "1.0.4",
+    "cheerio": "^1.1.2",
+    "conf": "^15.1.0",
+    "cross-keychain": "^1.1.0",
+    "cron-parser": "^5.5.0",
+    "dingtalk-stream": "2.1.6-beta.1",
+    "fast-xml-parser": "^5.5.11",
+    "fastify": "^4.25.0",
+    "http-proxy": "^1.18.1",
+    "imapflow": "^1.2.10",
+    "ioredis": "^5.3.0",
+    "js-tiktoken": "^1.0.21",
+    "jszip": "^3.10.0",
+    "node-pty": "1.2.0-beta.12",
+    "nodemailer": "^6.9.16",
+    "pino-roll": "^4.0.0",
+    "puppeteer": "^24.37.2",
+    "qrcode": "^1.5.4",
+    "rss-parser": "^3.13.0",
+    "sharp": "^0.34.5",
+    "smol-toml": "^1.6.0",
+    "socket.io": "^4.7.0",
+    "web-push": "^3.6.7",
+    "ws": "^8.19.0",
+    "yaml": "^2.8.1",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/http-proxy": "^1.17.17",
+    "@types/node": "^20.11.0",
+    "@types/nodemailer": "^6.4.17",
+    "@types/puppeteer": "^7.0.4",
+    "@types/qrcode": "^1.5.6",
+    "@types/sharp": "^0.32.0",
+    "@types/web-push": "^3.6.4",
+    "@types/ws": "^8.18.1",
+    "fast-check": "^4.5.3",
+    "jsdom": "^28.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "version": 2,
+  "coCreator": {
+    "name": "You",
+    "aliases": [],
+    "mentionPatterns": ["@co-creator"]
+  },
+  "roster": {
+    "office": {
+      "family": "office",
+      "roles": ["assistant"],
+      "lead": true,
+      "available": true,
+      "evaluation": "通用助手"
+    },
+    "assistant": {
+      "family": "assistant",
+      "roles": ["assistant"],
+      "lead": false,
+      "available": true,
+      "evaluation": "逻辑大师"
+    },
+    "agentteams": {
+      "family": "agentteams",
+      "roles": ["assistant"],
+      "lead": false,
+      "available": true,
+      "evaluation": "人文顾问"
+    }
+  },
+  "reviewPolicy": {
+    "requireDifferentFamily": true,
+    "preferActiveInThread": true,
+    "preferLead": true,
+    "excludeUnavailable": true
+  },
+  "breeds": [
+     {
+      "id": "office",
+      "agentId": "office",
+      "name": "通用助手",
+      "displayName": "通用助手",
+      "nickname": "小通",
+      "avatar": "/avatars/office.svg",
+      "color": {
+        "primary": "#2B5797",
+        "secondary": "#C0D0E8"
+      },
+      "mentionPatterns": ["@office", "@小通", "@通用助手"],
+      "roleDescription": "全局梳理、脉络串联",
+      "teamStrengths": "",
+      "caution": null,
+      "defaultVariantId": "office-default",
+      "variants": [
+        {
+          "id": "office-default",
+          "provider": "relayclaw",
+          "defaultModel": "glm-5.1",
+          "mcpSupport": true,
+          "cli": {
+            "command": "jiuwenclaw-app",
+            "outputFormat": "json"
+          },
+          "personality": "专业干练的职场精英，逻辑清晰，善于结构化输出和流程优化。具有冷静的全局观，擅长抓遗漏信息。",
+          "strengths": ["document-writing", "meeting-notes", "project-management", "data-analysis"],
+          "contextBudget": {
+            "maxPromptTokens": 180000,
+            "maxContextTokens": 160000,
+            "maxMessages": 200,
+            "maxContentLengthPerMsg": 10000
+          },
+          "accountRef": "huawei-maas",
+          "roleDescription": "全局梳理、脉络串联",
+          "providerProfileId": "huawei-maas",
+          "teamStrengths": "",
+          "caution": null,
+          "sessionChain": true
+        }
+      ]
+    },
+    {
+      "id": "assistant",
+      "agentId": "assistant",
+      "name": "逻辑大师",
+      "displayName": "逻辑大师",
+      "nickname": "小罗",
+      "avatar": "/avatars/assistant.svg",
+      "color": {
+        "primary": "#E8913A",
+        "secondary": "#FFF0DD"
+      },
+      "mentionPatterns": ["@assistant", "@小罗", "@逻辑大师"],
+      "roleDescription": "硬核逻辑、严谨论证",
+      "teamStrengths": "",
+      "caution": null,
+      "defaultVariantId": "assistant-default",
+      "variants": [
+        {
+          "id": "assistant-default",
+          "provider": "relayclaw",
+          "defaultModel": "deepseek-v3.2",
+          "mcpSupport": true,
+          "cli": {
+            "command": "jiuwenclaw-app",
+            "outputFormat": "json"
+          },
+          "personality": "拥有极致理性的逻辑人格，只认推导、事实、因果，对模糊/谬误零容忍，发言锋利直接",
+          "strengths": ["daily-qa", "info-organization", "creative-writing", "life-advice"],
+          "contextBudget": {
+            "maxPromptTokens": 180000,
+            "maxContextTokens": 160000,
+            "maxMessages": 200,
+            "maxContentLengthPerMsg": 10000
+          },
+          "accountRef": "huawei-maas",
+          "roleDescription": "硬核逻辑、严谨论证",
+          "providerProfileId": "huawei-maas",
+          "teamStrengths": "",
+          "caution": null,
+          "sessionChain": true
+        }
+      ]
+    },
+    {
+      "id": "agentteams",
+      "agentId": "agentteams",
+      "name": "人文顾问",
+      "displayName": "人文顾问",
+      "nickname": "小文",
+      "avatar": "/avatars/agentteams.png",
+      "color": {
+        "primary": "#4CAF50",
+        "secondary": "#E8F5E9"
+      },
+      "mentionPatterns": ["@agentteams", "@小文", "@人文顾问"],
+      "roleDescription": "伦理人情、社会视角",
+      "teamStrengths": "",
+      "caution": null,
+      "defaultVariantId": "agentteams-default",
+      "variants": [
+        {
+          "id": "agentteams-default",
+          "provider": "relayclaw",
+          "defaultModel": "glm-5",
+          "mcpSupport": true,
+          "cli": {
+            "command": "jiuwenclaw-app",
+            "outputFormat": "json"
+          },
+          "personality": "拥有温和通透的人文思想，立足伦理、人性、社会现实，平衡冰冷逻辑，兼顾情理",
+          "strengths": ["multi-agent", "task-decomposition", "tool-orchestration", "coding"],
+          "contextBudget": {
+            "maxPromptTokens": 120000,
+            "maxContextTokens": 100000,
+            "maxMessages": 100,
+            "maxContentLengthPerMsg": 10000
+          },
+          "accountRef": "huawei-maas",
+          "providerProfileId": "huawei-maas",
+          "sessionChain": true
+        }
+      ]
+    }
+  ]
+}

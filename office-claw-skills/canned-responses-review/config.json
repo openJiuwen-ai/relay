@@ -1,0 +1,9 @@
+{
+  "name": "常见法律询问模板回复",
+  "version": "1.0.0",
+  "description": "【Anthropic官方】为常见法律询问生成模板回复，并识别何时需要个别关注。适用于回复数据主体请求、供应商询问、NDA请求、发现保全等日常法律询问，或管理回复模板时使用。",
+  "triggers": ["canned responses", "模板回复", "法律回复", "data subject request", "litigation hold"],
+  "category": ["法律"],
+  "tags": ["模板", "回复", "法律询问", "数据主体请求", "Anthropic", "官方"],
+  "author": "Anthropic"
+}

@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>销售管理驾驶舱</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+    background: #f0f2f5;
+    color: #1f2937;
+    min-height: 100vh;
+  }
+
+  /* ===== Header ===== */
+  .header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2c5282 50%, #1e3a5f 100%);
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .header-logo {
+    width: 38px; height: 38px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; color: #fff;
+  }
+
+  .header-title {
+    font-size: 20px; font-weight: 700; color: #fff;
+    letter-spacing: 1px;
+  }
+
+  .header-sub {
+    font-size: 12px; color: rgba(255,255,255,0.6);
+    margin-top: 2px;
+  }
+
+  .header-right {
+    font-size: 13px; color: rgba(255,255,255,0.7);
+    display: flex; align-items: center; gap: 16px;
+  }
+
+  .header-date {
+    background: rgba(255,255,255,0.1);
+    padding: 5px 14px;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 13px;
+  }
+
+  /* ===== KPI Cards ===== */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    padding: 24px 32px 0;
+  }
+
+  .kpi-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 22px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .kpi-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.06);
+  }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+
+  .kpi-card.blue::before   { background: #3b82f6; }
+  .kpi-card.green::before  { background: #10b981; }
+  .kpi-card.orange::before { background: #f59e0b; }
+  .kpi-card.red::before    { background: #ef4444; }
+
+  .kpi-icon {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    position: absolute;
+    right: 20px; top: 20px;
+  }
+
+  .kpi-icon.blue   { background: #eff6ff; color: #3b82f6; }
+  .kpi-icon.green  { background: #ecfdf5; color: #10b981; }
+  .kpi-icon.orange { background: #fffbeb; color: #f59e0b; }
+  .kpi-icon.red    { background: #fef2f2; color: #ef4444; }
+
+  .kpi-label {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 8px;
+  }
+
+  .kpi-value {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+  }
+
+  .kpi-value.blue   { color: #1e40af; }
+  .kpi-value.green  { color: #065f46; }
+  .kpi-value.orange { color: #92400e; }
+  .kpi-value.red    { color: #991b1b; }
+
+  .kpi-change {
+    margin-top: 10px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .kpi-change.up   { color: #10b981; }
+  .kpi-change.down { color: #ef4444; }
+
+  .kpi-arrow {
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  /* ===== Chart Grid ===== */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding: 24px 32px 32px;
+  }
+
+  .chart-card {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+    overflow: hidden;
+  }
+
+  .chart-header {
+    padding: 18px 22px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .chart-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .chart-badge {
+    font-size: 11px;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+
+  .chart-body {
+    padding: 8px 10px 14px;
+    height: 370px;
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 1100px) {
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .chart-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .kpi-row { grid-template-columns: 1fr; padding: 16px; gap: 12px; }
+    .chart-grid { padding: 0 16px 16px; gap: 12px; }
+    .header { padding: 14px 16px; }
+    .header-right { display: none; }
+    .kpi-value { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="header-logo">&#9670;</div>
+    <div>
+      <div class="header-title">销售管理驾驶舱</div>
+      <div class="header-sub">Sales Management Cockpit</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span>数据周期：2026年5月</span>
+    <span class="header-date">2026-05-19</span>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="kpi-row">
+  <!-- KPI 1: 当月销售额 -->
+  <div class="kpi-card blue">
+    <div class="kpi-icon blue">&#165;</div>
+    <div class="kpi-label">当月销售额（万元）</div>
+    <div class="kpi-value blue">4,950</div>
+    <div class="kpi-change up">
+      <span class="kpi-arrow">&#9650;</span> 环比 +1.23%
+    </div>
+  </div>
+  <!-- KPI 2: 月目标达成率 -->
+  <div class="kpi-card green">
+    <div class="kpi-icon green">&#9733;</div>
+    <div class="kpi-label">月目标达成率</div>
+    <div class="kpi-value green">95.19%</div>
+    <div class="kpi-change up">
+      <span class="kpi-arrow">&#9650;</span> 环比 +1.15pp
+    </div>
+  </div>
+  <!-- KPI 3: 回款率 -->
+  <div class="kpi-card orange">
+    <div class="kpi-icon orange">&#8634;</div>
+    <div class="kpi-label">综合回款率</div>
+    <div class="kpi-value orange">80.00%</div>
+    <div class="kpi-change up">
+      <span class="kpi-arrow">&#9650;</span> 环比 +3.00pp
+    </div>
+  </div>
+  <!-- KPI 4: 应收账款总额 -->
+  <div class="kpi-card red">
+    <div class="kpi-icon red">&#9888;</div>
+    <div class="kpi-label">应收账款总额（万元）</div>
+    <div class="kpi-value red">3,335</div>
+    <div class="kpi-change down">
+      <span class="kpi-arrow">&#9660;</span> 环比 +5.87%
+    </div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="chart-grid">
+
+  <!-- Chart 1: 区域销售达成率 -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">区域销售达成率</div>
+      <span class="chart-badge" style="background:#ecfdf5;color:#065f46;">达标线 100%</span>
+    </div>
+    <div class="chart-body" id="achieveChart"></div>
+  </div>
+
+  <!-- Chart 2: 各区域销售趋势对比 -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">各区域销售趋势对比</div>
+      <span class="chart-badge" style="background:#eff6ff;color:#1e40af;">双轴对比</span>
+    </div>
+    <div class="chart-body" id="trendChart"></div>
+  </div>
+
+  <!-- Chart 3: 应收账款账龄 -->
+  <div class="chart-card" style="grid-column: 1 / -1;">
+    <div class="chart-header">
+      <div class="chart-title">应收账款账龄分布</div>
+      <span class="chart-badge" style="background:#fef2f2;color:#991b1b;">单位：万元</span>
+    </div>
+    <div class="chart-body" id="agingChart" style="height:340px;"></div>
+  </div>
+
+</div>
+
+<script>
+// ==================== Data ====================
+const regions = ['华东','华南','华北','西南','华中','西北','东北'];
+const curMonth  = [1280, 1050, 860, 620, 540, 320, 280];
+const target    = [1200, 1100, 900, 650, 600, 400, 350];
+const lastMonth = [1150, 1080, 820, 600, 580, 350, 310];
+const lastYear  = [980,  920,  750, 540, 490, 300, 290];
+const payRate   = [92, 88, 85, 78, 82, 70, 65];
+const ar030     = [320, 280, 250, 200, 180, 150, 120];
+const ar3160    = [150, 180, 130, 160, 120, 100, 90];
+const ar6190    = [60,  90,  80,  100, 85,  80,  70];
+const ar90plus  = [20,  45,  55,  70,  40,  60,  50];
+
+// Achievement rate %
+const achieveRate = curMonth.map((v, i) => +(v / target[i] * 100).toFixed(1));
+
+// ==================== Chart 1: Achievement Rate Bar ====================
+const achieveChart = echarts.init(document.getElementById('achieveChart'));
+
+// Color per bar based on rate
+const barColors = achieveRate.map(r => {
+  if (r >= 100) return new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#34d399'},{offset:1,color:'#10b981'}]);
+  if (r >= 90)  return new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#fbbf24'},{offset:1,color:'#f59e0b'}]);
+  return new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#f87171'},{offset:1,color:'#ef4444'}]);
+});
+
+achieveChart.setOption({
+  tooltip: {
+    trigger: 'axis',
+    backgroundColor: '#fff',
+    borderColor: '#e5e7eb',
+    borderWidth: 1,
+    textStyle: { color: '#1f2937', fontSize: 13 },
+    formatter: function(ps) {
+      var p = ps[0];
+      var idx = p.dataIndex;
+      var rate = achieveRate[idx];
+      var color = rate >= 100 ? '#10b981' : rate >= 90 ? '#f59e0b' : '#ef4444';
+      var tag = rate >= 100 ? '达标' : rate >= 90 ? '接近达标' : '未达标';
+      return '<b>' + p.name + '</b><br/>' +
+        '达成率: <b style="color:' + color + '">' + rate + '%</b> (' + tag + ')<br/>' +
+        '当月: ' + curMonth[idx] + ' 万 / 目标: ' + target[idx] + ' 万';
+    }
+  },
+  grid: { left: 60, right: 30, top: 30, bottom: 40 },
+  xAxis: {
+    type: 'category', data: regions,
+    axisLabel: { color: '#6b7280', fontSize: 12 },
+    axisLine: { lineStyle: { color: '#e5e7eb' } },
+    axisTick: { show: false }
+  },
+  yAxis: {
+    type: 'value', min: 60, max: 120,
+    axisLabel: { color: '#6b7280', fontSize: 11, formatter: '{value}%' },
+    splitLine: { lineStyle: { color: '#f3f4f6', type: 'dashed' } },
+    axisLine: { show: false }, axisTick: { show: false }
+  },
+  series: [{
+    type: 'bar',
+    data: achieveRate.map((v, i) => ({
+      value: v,
+      itemStyle: { color: barColors[i], borderRadius: [4, 4, 0, 0] }
+    })),
+    barWidth: '45%',
+    label: {
+      show: true, position: 'top',
+      formatter: '{c}%', fontSize: 12, fontWeight: 600,
+      color: '#374151'
+    },
+    markLine: {
+      symbol: 'none',
+      lineStyle: { color: '#10b981', type: 'dashed', width: 2 },
+      label: {
+        show: true, position: 'end',
+        formatter: '达标线 100%', color: '#10b981',
+        fontSize: 11, fontWeight: 600
+      },
+      data: [{ yAxis: 100 }]
+    }
+  }]
+});
+
+// ==================== Chart 2: Trend Comparison (Dual Axis) ====================
+const trendChart = echarts.init(document.getElementById('trendChart'));
+
+trendChart.setOption({
+  tooltip: {
+    trigger: 'axis',
+    backgroundColor: '#fff',
+    borderColor: '#e5e7eb',
+    borderWidth: 1,
+    textStyle: { color: '#1f2937', fontSize: 13 },
+    axisPointer: { type: 'shadow' }
+  },
+  legend: {
+    top: 0, right: 0,
+    textStyle: { color: '#6b7280', fontSize: 11 },
+    itemWidth: 14, itemHeight: 10
+  },
+  grid: { left: 60, right: 60, top: 40, bottom: 40 },
+  xAxis: {
+    type: 'category', data: regions,
+    axisLabel: { color: '#6b7280', fontSize: 12 },
+    axisLine: { lineStyle: { color: '#e5e7eb' } },
+    axisTick: { show: false }
+  },
+  yAxis: [
+    {
+      type: 'value', name: '销售额(万)',
+      nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+      axisLabel: { color: '#6b7280', fontSize: 11 },
+      splitLine: { lineStyle: { color: '#f3f4f6', type: 'dashed' } },
+      axisLine: { show: false }, axisTick: { show: false }
+    },
+    {
+      type: 'value', name: '去年同期(万)',
+      nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+      axisLabel: { color: '#6b7280', fontSize: 11 },
+      splitLine: { show: false },
+      axisLine: { show: false }, axisTick: { show: false }
+    }
+  ],
+  series: [
+    {
+      name: '当月销售额',
+      type: 'bar', barWidth: '28%', barGap: '20%',
+      data: curMonth,
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#60a5fa'},{offset:1,color:'#3b82f6'}]),
+        borderRadius: [3,3,0,0]
+      }
+    },
+    {
+      name: '上月销售额',
+      type: 'bar', barWidth: '28%',
+      data: lastMonth,
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#a5b4fc'},{offset:1,color:'#818cf8'}]),
+        borderRadius: [3,3,0,0]
+      }
+    },
+    {
+      name: '去年同期',
+      type: 'line', yAxisIndex: 1,
+      data: lastYear,
+      smooth: true,
+      symbol: 'circle', symbolSize: 7,
+      lineStyle: { color: '#f59e0b', width: 2.5, type: 'dashed' },
+      itemStyle: { color: '#f59e0b', borderWidth: 2, borderColor: '#fff' }
+    }
+  ]
+});
+
+// ==================== Chart 3: AR Aging Stacked Bar ====================
+const agingChart = echarts.init(document.getElementById('agingChart'));
+
+agingChart.setOption({
+  tooltip: {
+    trigger: 'axis',
+    backgroundColor: '#fff',
+    borderColor: '#e5e7eb',
+    borderWidth: 1,
+    textStyle: { color: '#1f2937', fontSize: 13 },
+    axisPointer: { type: 'shadow' },
+    formatter: function(ps) {
+      var s = '<b>' + ps[0].name + '</b><br/>';
+      var total = 0;
+      ps.forEach(function(p) {
+        s += p.marker + p.seriesName + ': <b>' + p.value + '</b> 万<br/>';
+        total += p.value;
+      });
+      s += '<hr style="margin:4px 0;border-color:#e5e7eb"/>';
+      s += '合计: <b>' + total + '</b> 万';
+      return s;
+    }
+  },
+  legend: {
+    top: 0, right: 0,
+    textStyle: { color: '#6b7280', fontSize: 11 },
+    itemWidth: 14, itemHeight: 10
+  },
+  grid: { left: 60, right: 30, top: 40, bottom: 40 },
+  xAxis: {
+    type: 'category', data: regions,
+    axisLabel: { color: '#6b7280', fontSize: 12 },
+    axisLine: { lineStyle: { color: '#e5e7eb' } },
+    axisTick: { show: false }
+  },
+  yAxis: {
+    type: 'value',
+    axisLabel: { color: '#6b7280', fontSize: 11, formatter: '{value}' },
+    splitLine: { lineStyle: { color: '#f3f4f6', type: 'dashed' } },
+    axisLine: { show: false }, axisTick: { show: false }
+  },
+  series: [
+    {
+      name: '0-30天', type: 'bar', stack: 'aging', data: ar030, barWidth: '45%',
+      itemStyle: { color: '#60a5fa', borderRadius: [0,0,0,0] },
+      emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(96,165,250,0.3)' } }
+    },
+    {
+      name: '31-60天', type: 'bar', stack: 'aging', data: ar3160,
+      itemStyle: { color: '#fbbf24' },
+      emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(251,191,36,0.3)' } }
+    },
+    {
+      name: '61-90天', type: 'bar', stack: 'aging', data: ar6190,
+      itemStyle: { color: '#fb923c' },
+      emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(251,146,60,0.3)' } }
+    },
+    {
+      name: '90天以上', type: 'bar', stack: 'aging', data: ar90plus,
+      itemStyle: { color: '#f87171', borderRadius: [3,3,0,0] },
+      emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(248,113,113,0.3)' } }
+    }
+  ]
+});
+
+// ==================== Resize ====================
+window.addEventListener('resize', function() {
+  achieveChart.resize();
+  trendChart.resize();
+  agingChart.resize();
+});
+</script>
+</body>
+</html>

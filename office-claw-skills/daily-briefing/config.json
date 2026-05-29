@@ -1,0 +1,12 @@
+{
+  "name": "daily-briefing",
+  "version": "1.0.0",
+  "author": "Anthropic",
+  "description": "【Anthropic官方】开始你的一天，获取优先级的销售简报。支持手动输入，连接日历、CRM和邮件后效果更佳。",
+  "triggers": [
+    "daily briefing",
+    "morning brief",
+    "sales briefing",
+    "start my day"
+  ]
+}

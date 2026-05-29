@@ -1,0 +1,18 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="32.000000" height="32.000000" fill="none" customFrame="#000000">
+	<defs>
+		<linearGradient id="paint_linear_55" x1="16.9382248" x2="16.9382248" y1="9.19580078" y2="22.8046722" gradientUnits="userSpaceOnUse">
+			<stop stop-color="rgb(45,153,254)" offset="0" stop-opacity="1" />
+			<stop stop-color="rgb(108,190,211)" offset="1" stop-opacity="1" />
+		</linearGradient>
+	</defs>
+	<rect id="多渠道" width="32.000000" height="31.999998" x="0.000000" y="0.000000" />
+	<path id="矢量 2" d="M0 2.78873L3.85442 0" stroke="rgb(45,153,254)" stroke-linecap="round" stroke-width="0.899999976" transform="matrix(0.767468,0.641087,-0.641087,0.767468,24.3506,16.0737)" />
+	<path id="矢量 5" d="M0 9.05386L23.0543 0" stroke="rgb(45,153,254)" stroke-linecap="round" stroke-width="0.899999976" transform="matrix(-0.776227,0.630453,-0.630453,-0.776227,28.271,12.7158)" />
+	<path id="矢量 3" d="M4.93571 7.98947L0 0" stroke="rgb(45,153,254)" stroke-linecap="round" stroke-width="0.899999976" transform="matrix(0.218567,-0.975822,-0.975822,-0.218567,14.1255,14.1255)" />
+	<path id="矢量 2" d="M19.6597 10.5567L22.3814 6.47412" opacity="0" stroke="rgb(45,153,254)" stroke-linecap="round" stroke-width="0.9375" />
+	<circle id="椭圆 5" cx="9.90673828" cy="27.71875" r="3.28125" fill="rgb(132,204,195)" />
+	<circle id="椭圆 6" cx="5.68798828" cy="5.6875" r="4.6875" fill="rgb(132,204,195)" />
+	<circle id="椭圆 8" cx="28.2021484" cy="18.8125" r="2.8125" fill="rgb(132,204,195)" />
+	<circle id="椭圆 9" cx="23.0317383" cy="4.75" r="1.875" fill="rgb(132,204,195)" />
+	<circle id="椭圆 3" cx="16.9382248" cy="16.0002365" r="6.80443525" fill="url(#paint_linear_55)" />
+</svg>

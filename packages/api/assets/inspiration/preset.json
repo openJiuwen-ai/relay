@@ -1,0 +1,208 @@
+{
+  "templates": [
+    {
+      "id": "tpl-schedule-004",
+      "name": "定时学习小知识",
+      "title": "每日知识点故事化讲解",
+      "thumbnailUrl": "/images/inspiration-products/default.svg",
+      "category": "定时任务",
+      "description": "每天自动选取一个专业知识点或理论，覆盖科技、金融、人文社科等领域，用李诞七步写作框架输出故事化讲解，于每晚9:00推送。",
+      "prompt": "设置每天选一个某领域的专业知识点或者理论，包括但不限于科技领域、金融领域、人文社科领域等等，然后用李诞七步写作框架输出故事解释这个知识，并在推送每天21:00给我",
+      "skills": [
+        {
+          "id": "skill-reminder",
+          "name": "定时任务"
+        },
+        {
+          "id": "lidan-writing-framework",
+          "name": "李诞七步写作框架"
+        }
+      ],
+      "agents": [
+        {
+          "id": "office",
+          "name": "通用助手",
+          "catId": "office"
+        }
+      ],
+      "products": [
+        {
+          "id": "prod-schedule-knowledge-001",
+          "name": "信息熵-李诞七步写作框架.md",
+          "type": "markdown",
+          "relativePath": "entropy-lidan-framework.md"
+        }
+      ],
+      "createdAt": "2026-05-19T00:00:00Z",
+      "updatedAt": "2026-05-19T00:00:00Z"
+    },
+    {
+      "id": "tpl-expert-003",
+      "name": "购物车凑单推荐评审",
+      "title": "产品架构开发协同评审",
+      "thumbnailUrl": "/images/inspiration-products/default.svg",
+      "category": "专家团思辨",
+      "description": "产品经理拉上架构专家和开发工程师，从用户价值、系统架构、开发落地三个层面评审购物车满减凑单推荐模块，输出完整评审文档。",
+      "prompt": "@产品经理 运营团队提出要在购物车页面增加“满减凑单推荐”模块，提升客单价。基于这个需求，你拉着@架构专家@开发工程师 进行协同评审，然后将你们讨论的结果输出一个文档给我",
+      "skills": [],
+      "agents": [
+        {
+          "id": "product-manager",
+          "name": "产品经理",
+          "catId": "product-manager"
+        },
+        {
+          "id": "architect",
+          "name": "架构专家",
+          "catId": "architect"
+        },
+        {
+          "id": "developer",
+          "name": "开发工程师",
+          "catId": "developer"
+        }
+      ],
+      "products": [
+        {
+          "id": "prod-expert-cart-upsell-001",
+          "name": "购物车满减凑单推荐_协同评审报告.md",
+          "type": "markdown",
+          "relativePath": "cart-upsell-review-report.md"
+        }
+      ],
+      "createdAt": "2026-05-19T00:00:00Z",
+      "updatedAt": "2026-05-19T00:00:00Z"
+    },
+    {
+      "id": "tpl-data-004",
+      "name": "用户流失预警分析",
+      "title": "SaaS客户流失风险识别",
+      "thumbnailUrl": "/images/inspiration-products/default.svg",
+      "category": "数据分析",
+      "description": "基于SaaS客户登录、功能使用、工单、NPS和合同剩余天数等行为数据，识别流失相关特征，设计预警规则并输出优先干预名单。",
+      "prompt": "某SaaS平台月度续费率连续下滑，需要提前识别流失风险客户并干预。\n请基于以下客户行为数据，做流失预警分析：\n\n数据表（CSV格式）：\n客户ID,近30天登录天数,关键功能使用次数,工单提交次数,NPS评分,合同剩余天数,对接人是否变更,是否流失\nC001,25,18,2,9,120,否,否\nC002,3,0,0,5,60,否,是\nC003,20,12,1,8,90,否,否\nC004,7,2,0,6,30,否,是\nC005,28,22,3,9,150,否,否\nC006,1,0,1,3,15,是,是\nC007,14,8,0,7,45,否,否\nC008,5,1,0,4,10,否,是\nC009,30,25,4,9,180,否,否\nC010,0,0,0,2,5,否,是\nC011,18,10,2,8,75,否,否\nC012,2,0,0,3,20,是,是\nC013,22,15,1,7,100,否,否\nC014,10,4,0,5,40,否,否\nC015,0,0,0,1,3,否,是\n\n要求：\n1. 找出与“是否流失”最相关的前3个特征，并给出相关性系数。\n2. 设计一个可落地的预警规则（例如“近30天登录天数<X 且 关键功能使用次数<Y”），并说明选择该阈值的理由。\n3. 用该规则验证准确率和召回率。\n4. 给出下次续费到期前需要优先干预的客户名单（假设预警名单生成后还有60天窗口期可干预，合同剩余天数≤60的都算高风险）。",
+      "skills": [
+        {
+          "id": "skill-data",
+          "name": "数据分析"
+        }
+      ],
+      "agents": [
+        {
+          "id": "operations",
+          "name": "运营专家",
+          "catId": "operations"
+        }
+      ],
+      "products": [
+        {
+          "id": "prod-data-churn-001",
+          "name": "用户流失预警分析.png",
+          "type": "image",
+          "relativePath": "churn-warning-analysis.png"
+        }
+      ],
+      "createdAt": "2026-05-19T00:00:00Z",
+      "updatedAt": "2026-05-19T00:00:00Z",
+      "thumbnailRelativePath": "churn-warning-analysis-thumbnail.png"
+    },
+    {
+      "id": "tpl-viz-002",
+      "name": "用户行为图表",
+      "title": "可视化分析图表",
+      "thumbnailUrl": "/images/inspiration-products/default.svg",
+      "category": "数据可视化",
+      "description": "设计用户行为分析专用可视化图表，包括漏斗图、热力图、留存曲线、地域分布等。",
+      "prompt": "请设计一套用户行为分析专用可视化图表，包括漏斗图、热力图、留存曲线、地域分布，直观呈现用户规律，专业清晰。",
+      "skills": [
+        {
+          "id": "skill-viz",
+          "name": "数据可视化"
+        }
+      ],
+      "agents": [
+        {
+          "id": "office",
+          "name": "通用助手",
+          "catId": "office"
+        }
+      ],
+      "products": [
+        {
+          "id": "prod-viz-user-behavior-001",
+          "name": "用户行为分析专用可视化案例.html",
+          "type": "html",
+          "relativePath": "user-behavior-visualization.html"
+        }
+      ],
+      "createdAt": "2026-05-01T00:00:00Z",
+      "updatedAt": "2026-05-19T00:00:00Z",
+      "thumbnailRelativePath": "user-behavior-visualization-thumbnail.png"
+    },
+    {
+      "id": "tpl-viz-004",
+      "name": "销售管理驾驶舱",
+      "title": "销售管理可视化看板",
+      "thumbnailUrl": "/images/inspiration-products/default.svg",
+      "category": "数据可视化",
+      "description": "根据区域销售额、目标、回款率和应收账款账龄数据，生成包含KPI、达成率、趋势对比和账龄分布的可交互销售驾驶舱HTML。",
+      "prompt": "请根据以下数据，生成一个可直接运行的HTML文件，实现销售管理驾驶舱可视化。要求使用ECharts（CDN引入），页面包含：\n\n1. 顶部4个KPI指标卡：当月销售额、月目标达成率、回款率、应收账款总额，附环比变化箭头和颜色。\n2. 区域销售达成率柱状图：用颜色区分达成率（≥100%绿色，90-100%橙色，<90%红色），标记100%达标线。\n3. 各区域销售趋势对比图：柱状图展示当月和上月销售额，折线展示去年同期，双轴。\n4. 应收账款账龄堆叠柱状图：按区域展示0-30天、31-60天、61-90天、90天以上分段。\n\n样式：白底，卡片阴影，字体微软雅黑，响应式布局。\n\n数据如下：\n区域,当月销售额(万元),月目标(万元),上月销售额(万元),去年同期(万元),回款率(%),应收0-30天,应收31-60天,应收61-90天,应收90天以上\n华东,1280,1200,1150,980,92,320,150,60,20\n华南,1050,1100,1080,920,88,280,180,90,45\n华北,860,900,820,750,85,250,130,80,55\n西南,620,650,600,540,78,200,160,100,70\n华中,540,600,580,490,82,180,120,85,40\n西北,320,400,350,300,70,150,100,80,60\n东北,280,350,310,290,65,120,90,70,50",
+      "skills": [
+        {
+          "id": "skill-viz",
+          "name": "数据可视化"
+        }
+      ],
+      "agents": [
+        {
+          "id": "office",
+          "name": "通用助手",
+          "catId": "office"
+        }
+      ],
+      "products": [
+        {
+          "id": "prod-viz-sales-dashboard-001",
+          "name": "销售管理驾驶舱可视化.html",
+          "type": "html",
+          "relativePath": "sales-management-dashboard.html"
+        }
+      ],
+      "createdAt": "2026-05-19T00:00:00Z",
+      "updatedAt": "2026-05-19T00:00:00Z",
+      "thumbnailRelativePath": "sales-management-dashboard-thumbnail.png"
+    },
+    {
+      "id": "tpl-finance-001",
+      "name": "理财规划方案",
+      "title": "中产家庭理财",
+      "thumbnailUrl": "/images/inspiration-products/default.svg",
+      "category": "金融服务",
+      "description": "为普通中产家庭生成完整可执行的理财规划方案，包含现金管理、保障配置、权益与固收配比、风险控制和长期执行步骤。",
+      "prompt": "请以普通中产家庭为对象，生成一份完整可执行的理财规划方案，包含现金管理、保障配置、权益与固收配比、风险控制和长期执行步骤，实用易懂。",
+      "skills": [
+        {
+          "id": "skill-finance",
+          "name": "金融服务"
+        }
+      ],
+      "agents": [
+        {
+          "id": "office",
+          "name": "通用助手",
+          "catId": "office"
+        }
+      ],
+      "products": [
+        {
+          "id": "prod-finance-family-plan-001",
+          "name": "中产家庭理财规划方案.md",
+          "type": "markdown",
+          "relativePath": "middle-class-finance-plan.md"
+        }
+      ],
+      "createdAt": "2026-05-01T00:00:00Z",
+      "updatedAt": "2026-05-19T00:00:00Z"
+    }
+  ]
+}

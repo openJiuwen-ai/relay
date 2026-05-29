@@ -1,0 +1,318 @@
+/* Base button layout — all variants share these */
+.ui-button-major,
+.ui-button-default,
+.ui-button-danger,
+.ui-button-ghost,
+.ui-button-text,
+.ui-button-icon,
+.ui-button-icon-text,
+.ui-button-dropdown,
+.ui-button-primary,
+.ui-button-danger-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border-width: 1px;
+  border-style: solid;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+/* Size tokens */
+.ui-button-lg {
+  height: 32px;
+  padding: 6px 24px;
+  min-width: 96px;
+}
+
+.ui-button-md {
+  height: 28px;
+  padding: 4px 24px;
+  min-width: 84px;
+}
+
+.ui-button-sm {
+  height: 24px;
+  padding: 2px 16px;
+  min-width: 64px;
+}
+
+.ui-button-xs {
+  height: 20px;
+  padding: 0px 12px;
+  min-width: 64px;
+}
+
+/* Icon button sizes */
+.ui-button-icon-lg {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.ui-button-icon-md {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+.ui-button-icon-sm {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+}
+
+.ui-button-icon-xs {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+}
+
+.ui-button-icon-no-border {
+  border: none;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: transparent;
+}
+
+/* Icon button (global shell style — also in globals.css @layer components) */
+.ui-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-sm);
+  min-width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+.ui-icon-button:hover {
+  background: var(--accent-soft);
+  color: var(--text-accent);
+}
+
+.ui-icon-button-compact {
+  height: 28px;
+  width: 28px;
+  min-height: 28px;
+  min-width: 28px;
+  border-radius: var(--radius-sm);
+  padding: 0;
+}
+
+@keyframes button-loading-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.buttonLoadingSpinner {
+  animation: button-loading-spin 1s linear infinite;
+}
+
+/* Variant classes — all colors driven by CSS variables */
+.uiButtonMajor {
+  background-color: var(--button-major-bg);
+  color: var(--button-major-text);
+  border-color: var(--button-major-border);
+}
+
+.uiButtonMajor:hover:not(:disabled) {
+  background-color: var(--button-major-bg-hover);
+  border-color: var(--button-major-border-hover);
+  color: var(--button-major-text-hover);
+}
+
+.uiButtonMajor:disabled {
+  background-color: var(--button-major-bg-disabled);
+  color: var(--button-major-text-disabled);
+  border-color: var(--button-major-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonDefault {
+  background-color: var(--button-default-bg);
+  color: var(--button-default-text);
+  border-color: var(--button-default-border);
+}
+
+.uiButtonDefault:hover:not(:disabled) {
+  background-color: var(--button-default-bg-hover);
+  border-color: var(--button-default-border-hover);
+  color: var(--button-default-text-hover);
+}
+
+.uiButtonDefault:disabled {
+  background-color: var(--button-default-bg-disabled);
+  color: var(--button-default-text-disabled);
+  border-color: var(--button-default-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonDanger {
+  background-color: var(--button-danger-bg);
+  color: var(--button-danger-text);
+  border-color: var(--button-danger-border);
+}
+
+.uiButtonDanger:hover:not(:disabled) {
+  background-color: var(--button-danger-bg-hover);
+  border-color: var(--button-danger-border-hover);
+  color: var(--button-danger-text-hover);
+}
+
+.uiButtonDanger:disabled {
+  background-color: var(--button-danger-bg-disabled);
+  color: var(--button-danger-text-disabled);
+  border-color: var(--button-danger-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonGhost {
+  background-color: var(--button-ghost-bg);
+  color: var(--button-ghost-text);
+  border-color: var(--button-ghost-border);
+}
+
+.uiButtonGhost:hover:not(:disabled) {
+  background-color: var(--button-ghost-bg-hover);
+  border-color: var(--button-ghost-border-hover);
+  color: var(--button-ghost-text-hover);
+}
+
+.uiButtonGhost:disabled {
+  background-color: var(--button-ghost-bg-disabled);
+  color: var(--button-ghost-text-disabled);
+  border-color: var(--button-ghost-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonText {
+  background-color: var(--button-text-bg);
+  color: var(--button-text-text);
+  border-color: var(--button-text-border);
+}
+
+.uiButtonText:hover:not(:disabled) {
+  background-color: var(--button-text-bg-hover);
+  border-color: var(--button-text-border-hover);
+  color: var(--button-text-text-hover);
+}
+
+.uiButtonText:disabled {
+  background-color: var(--button-text-bg-disabled);
+  color: var(--button-text-text-disabled);
+  border-color: var(--button-text-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonIcon {
+  background-color: var(--button-icon-bg);
+  color: var(--button-icon-text);
+  border-color: var(--button-icon-border);
+}
+
+.uiButtonIcon:hover:not(:disabled) {
+  background-color: var(--button-icon-bg-hover);
+  border-color: var(--button-icon-border-hover);
+  color: var(--button-icon-text-hover);
+}
+
+.uiButtonIcon:disabled {
+  background-color: var(--button-icon-bg-disabled);
+  color: var(--button-icon-text-disabled);
+  border-color: var(--button-icon-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonIconText {
+  background-color: var(--button-iconText-bg);
+  color: var(--button-iconText-text);
+  border-color: var(--button-iconText-border);
+}
+
+.uiButtonIconText:hover:not(:disabled) {
+  background-color: var(--button-iconText-bg-hover);
+  border-color: var(--button-iconText-border-hover);
+  color: var(--button-iconText-text-hover);
+}
+
+.uiButtonIconText:disabled {
+  background-color: var(--button-iconText-bg-disabled);
+  color: var(--button-iconText-text-disabled);
+  border-color: var(--button-iconText-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonDropdown {
+  background-color: var(--button-dropdown-bg);
+  color: var(--button-dropdown-text);
+  border-color: var(--button-dropdown-border);
+}
+
+.uiButtonDropdown:hover:not(:disabled) {
+  background-color: var(--button-dropdown-bg-hover);
+  border-color: var(--button-dropdown-border-hover);
+  color: var(--button-dropdown-text-hover);
+}
+
+.uiButtonDropdown:disabled {
+  background-color: var(--button-dropdown-bg-disabled);
+  color: var(--button-dropdown-text-disabled);
+  border-color: var(--button-dropdown-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonPrimary {
+  background-color: var(--button-primary-bg);
+  color: var(--button-primary-text);
+  border-color: var(--button-primary-border);
+}
+
+.uiButtonPrimary:hover:not(:disabled) {
+  background-color: var(--button-primary-bg-hover);
+  border-color: var(--button-primary-border-hover);
+  color: var(--button-primary-text-hover);
+}
+
+.uiButtonPrimary:disabled {
+  background-color: var(--button-primary-bg-disabled);
+  color: var(--button-primary-text-disabled);
+  border-color: var(--button-primary-border-disabled);
+  pointer-events: none;
+}
+
+.uiButtonDangerOutline {
+  background-color: var(--button-danger-outline-bg);
+  color: var(--button-danger-outline-text);
+  border-color: var(--button-danger-outline-border);
+}
+
+.uiButtonDangerOutline:hover:not(:disabled) {
+  background-color: var(--button-danger-outline-bg-hover);
+  border-color: var(--button-danger-outline-border-hover);
+  color: var(--button-danger-outline-text-hover);
+}
+
+.uiButtonDangerOutline:disabled {
+  background-color: var(--button-danger-outline-bg-disabled);
+  color: var(--button-danger-outline-text-disabled);
+  border-color: var(--button-danger-outline-border-disabled);
+  pointer-events: none;
+}

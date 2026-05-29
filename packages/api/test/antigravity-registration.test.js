@@ -1,0 +1,30 @@
+/*
+ * *
+ *  * Copyright (C) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ *
+ */
+
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+
+describe('Antigravity provider registration', () => {
+  test('cat-config-loader accepts antigravity provider', async () => {
+    const { loadCatConfig } = await import('../dist/config/office-claw-config-loader.js');
+    const config = loadCatConfig();
+    const bengal = config.breeds.find((b) => b.id === 'bengal');
+    assert.ok(bengal, 'bengal breed should exist in config');
+    assert.ok(bengal.variants.length > 0, 'bengal should have variants');
+    assert.equal(bengal.variants[0].provider, 'antigravity');
+  });
+
+  test('AntigravityAgentService is importable', async () => {
+    const mod = await import('../dist/domains/agents/services/agents/providers/antigravity/AntigravityAgentService.js');
+    assert.ok(mod.AntigravityAgentService, 'should export AntigravityAgentService');
+  });
+
+  test('AntigravityCdpClient is importable', async () => {
+    const mod = await import('../dist/domains/agents/services/agents/providers/antigravity/AntigravityCdpClient.js');
+    assert.ok(mod.AntigravityCdpClient, 'should export AntigravityCdpClient');
+    assert.ok(mod.findEditorTarget, 'should export findEditorTarget');
+  });
+});
