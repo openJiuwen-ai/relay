@@ -2,7 +2,7 @@
   "name": "@openjiuwen/relay-storage-sqlite",
   "version": "1.0.0",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "publishConfig": {
     "access": "public"
   },
