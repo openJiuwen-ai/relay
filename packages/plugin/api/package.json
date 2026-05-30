@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Plugin contracts for OfficeClaw extensions: auth, storage, identity.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "publishConfig": {
     "access": "public"
   },
