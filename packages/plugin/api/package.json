@@ -1,6 +1,6 @@
 {
   "name": "@openjiuwen/relay-api-server-contracts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Plugin contracts for OfficeClaw extensions: auth, storage, identity.",
   "license": "Apache-2.0",
@@ -61,7 +61,7 @@
     "prepublishOnly": "tsc"
   },
   "peerDependencies": {
-    "@openjiuwen/relay-shared": ">=1.0.0"
+    "@openjiuwen/relay-shared": ">=1.0.1"
   },
   "devDependencies": {
     "@openjiuwen/relay-shared": "workspace:*",

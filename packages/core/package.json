@@ -1,6 +1,6 @@
 {
   "name": "@openjiuwen/relay-core",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "license": "Apache-2.0",
   "publishConfig": {
@@ -42,7 +42,7 @@
     "@openjiuwen/relay-shared": "workspace:*"
   },
   "peerDependencies": {
-    "@openjiuwen/relay-api-server-contracts": ">=1.0.0"
+    "@openjiuwen/relay-api-server-contracts": ">=1.0.1"
   },
   "devDependencies": {
     "@openjiuwen/relay-api-server-contracts": "workspace:*",

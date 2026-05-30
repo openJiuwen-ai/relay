@@ -532,7 +532,6 @@ export { ThreadSidebar } from '../components/thread-sidebar/ThreadSidebar';
 export { ThreadSidebarDeleteDialog } from '../components/thread-sidebar/ThreadSidebarDeleteDialog';
 export { ThreadSidebarFooter } from '../components/thread-sidebar/ThreadSidebarFooter';
 export { ThreadSidebarView } from '../components/thread-sidebar/ThreadSidebarView';
-
 export { getProjectLatestActivity, getRecentThreads, PROJECT_PIN_KEY, readPinnedProjects, splitIntoActiveAndArchived, writePinnedProjects } from '../components/thread-sidebar/active-workspace';
 export { collapseAllGroups, expandAllGroups, findGroupKeyForThread, initCollapsedSet, readCollapsedGroups, resolveCollapse, shouldCollapse, shouldCollapseBeforeInit, STORAGE_KEY, writeCollapsedGroups } from '../components/thread-sidebar/collapse-state';
 export type { StorageLike } from '../components/thread-sidebar/collapse-state';
