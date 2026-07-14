@@ -8,7 +8,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-9+-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-**简体中文** | [English](README.en.md)
+**简体中文** | [English](README.md)
 
 </div>
 
