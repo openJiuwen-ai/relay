@@ -2,121 +2,121 @@
 
 # Relay
 
-**多智能体协作平台 — 让 AI 团队为你工作**
+**Multi-Agent Collaboration Platform — Let AI Teams Work for You**
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-9+-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-**简体中文** | [English](README.en.md)
+[简体中文](README.md) | **English**
 
 </div>
 
 ---
 
-## 简介
+## Introduction
 
-Relay 是一个多智能体协作平台，通过统一的界面进行协作开发、代码审查、任务管理，将多个 AI Agent 组织成一个真正的团队。
+Relay is a multi-agent collaboration platform that organizes multiple AI Agents into a real team, enabling collaborative development, code review, and task management through a unified interface.
 
-> **大多数框架帮你调用 Agent，Relay 帮他们协同工作。**
+> **Most frameworks help you call Agents, Relay helps them work together.**
 
-## 快速开始
+## Quick Start
 
-**前置条件：** Node.js 20+、pnpm 9+、Git
+**Prerequisites:** Node.js 20+, pnpm 9+, Git
 
 ```bash
-# 1. 克隆
+# 1. Clone
 git clone https://gitcode.com/openJiuwen/relay.git
 cd relay
 
-# 2. 安装依赖
+# 2. Install dependencies
 pnpm install
 
-# 3. 构建
+# 3. Build
 pnpm build
 
-# 4. 配置
+# 4. Configure
 cp .env.example .env
-# 编辑 .env，配置华为云 MaaS API Key
+# Edit .env, configure Huawei Cloud MaaS API Key
 
-# 5. 启动
+# 5. Start
 pnpm start
 ```
 
-打开 http://localhost:3003 开始使用。
+Open http://localhost:3003 to get started.
 
-## 架构简介
+## Architecture
 
-Relay 是平台的核心引擎，采用 Python 构建：
+Relay is the platform's core engine, built with Python:
 
-**核心能力：**
+**Core Capabilities:**
 
-| 模块 | 说明 |
-|-----|------|
-| **技能系统** | 按需加载技能包（TDD、调试、审查等） |
-| **通道系统** | Web、小艺、飞书等多平台接入 |
-| **记忆系统** | 会话记忆、长期记忆、跨会话知识持久化 |
-| **浏览器自动化** | 自动化 Web 操作，扩展 Agent 能力边界 |
-| **任务规划** | 拆解复杂任务，自动编排执行步骤 |
-| **定时任务** | 支持 cron 定时触发，自动执行计划任务 |
+| Module | Description |
+|--------|-------------|
+| **Skills System** | Load skill packs on demand (TDD, debugging, review, etc.) |
+| **Channels System** | Multi-platform access via Web, Xiaoyi, Feishu, etc. |
+| **Memory System** | Session memory, long-term memory, cross-session knowledge persistence |
+| **Browser Automation** | Automate web operations, extend Agent capabilities |
+| **Task Planning** | Break down complex tasks, auto-orchestrate execution steps |
+| **Scheduled Tasks** | Cron-based scheduling, auto-execute planned operations |
 
-**生态兼容：**
-- 支持华为云 MaaS 多种模型
-- 与小艺开放平台原生集成
-- 自托管，数据完全自主可控
+**Ecosystem Compatibility:**
+- Supports various models on Huawei Cloud MaaS
+- Native integration with Xiaoyi Open Platform
+- Self-hosted, full data sovereignty
 
-## 功能
+## Features
 
-### 主页界面
+### Home Interface
 
-<!-- 截图待补充：docs/assets/ 目录下需放置 home.png, models.png, agents.png, skills.png, channels.png, scheduled-tasks.png, runtime-status.png -->
+<!-- Screenshots to be added: docs/assets/ directory needs home.png, models.png, agents.png, skills.png, channels.png, scheduled-tasks.png, runtime-status.png -->
 
-多智能体对话，支持 @提及路由、线程隔离、富文本卡片回复。
+Multi-agent chat with @mention routing, thread isolation, and rich card replies.
 
-### 模型管理
+### Model Management
 
-配置和管理华为云 MaaS 模型，支持多模型切换。
+Configure and manage Huawei Cloud MaaS models, support multi-model switching.
 
-### 智能体管理
+### Agent Management
 
-配置智能体角色、技能、协作策略。
+Configure agent roles, skills, and collaboration strategies.
 
-### 技能系统
+### Skills System
 
-动态加载技能包，按需扩展 Agent 能力。
+Dynamically load skill packs to extend Agent capabilities on demand.
 
-### 渠道管理
+### Channels Management
 
-飞书、小艺等多渠道接入配置。
+Configure multi-channel access including Feishu, Xiaoyi, etc.
 
-### 定时任务
+### Scheduled Tasks
 
-创建、管理定时任务，自动执行计划操作。
+Create and manage scheduled tasks for automated operations.
 
-### 运行时状态
+### Runtime Status
 
-实时监控智能体运行状态和资源使用。
+Real-time monitoring of agent runtime status and resource usage.
 
-## 参与贡献
+## Contributing
 
-欢迎贡献！请遵循以下流程：
+Contributions welcome! Please follow this workflow:
 
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
+1. Fork this repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push branch (`git push origin feature/amazing-feature`)
+5. Create Pull Request
 
-详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-## 开源许可
+## License
 
-本项目基于 [Apache License 2.0](LICENSE) 开源。
+This project is open-sourced under [Apache License 2.0](LICENSE).
 
-基于 Apache License, Version 2.0 许可。除非符合许可条款，否则不得使用本文件。
+Licensed under the Apache License, Version 2.0. You may not use this file except in compliance with the License.
 
 ---
 
 <p align="center">
-  <em>构建 AI 团队，不只是 Agent。</em>
+  <em>Build AI teams, not just Agents.</em>
 </p>
