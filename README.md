@@ -26,7 +26,7 @@ Relay is a multi-agent collaboration platform that organizes multiple AI Agents 
 
 ```bash
 # 1. Clone
-git clone https://gitcode.com/openJiuwen/relay.git
+git clone https://github.com/openJiuwen-ai/relay.git
 cd relay
 
 # 2. Install dependencies
