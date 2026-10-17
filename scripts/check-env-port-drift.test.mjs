@@ -29,6 +29,8 @@ const ROOT = resolve(process.cwd());
 // Home repo has sync-to-opensource.sh; open-source repo does not.
 const isHomeRepo = existsSync(resolve(ROOT, 'scripts/sync-to-opensource.sh'));
 const hasEnvExampleOpensource = existsSync(resolve(ROOT, '.env.example.opensource'));
+const innerEnvFile = '.inner.env';
+const hasInnerEnv = existsSync(resolve(ROOT, innerEnvFile));
 
 function readEnvFile(relPath) {
   const content = readFileSync(resolve(ROOT, relPath), 'utf-8');
@@ -222,15 +224,24 @@ describe(`Code-side port defaults are internally consistent (${repoLabel}: API=$
     );
   });
 
-  it(`frontend-origin.ts DEFAULT_FRONTEND_BASE_URL uses port ${expectedFrontendPort}`, () => {
-    const fallback = readTsFallback(
-      'packages/api/src/config/frontend-origin.ts',
-      /DEFAULT_FRONTEND_BASE_URL\s*=\s*'http:\/\/localhost:(\d+)'/,
+  it(`frontend-origin.ts DEFAULT_FRONTEND_BASE_URL uses port ${expectedFrontendPort}`, {
+    skip: !hasInnerEnv && `${innerEnvFile} not present`,
+  }, () => {
+    const source = readFileSync(
+      resolve(ROOT, 'packages/api/src/config/frontend-origin.ts'),
+      'utf-8',
     );
+    assert.match(
+      source,
+      /DEFAULT_FRONTEND_BASE_URL\s*=\s*process\.env\.DEFAULT_FRONTEND_BASE_URL/,
+      'frontend-origin DEFAULT_FRONTEND_BASE_URL should come from the environment',
+    );
+    const origin = readEnvFile(innerEnvFile).DEFAULT_FRONTEND_BASE_URL ?? '';
+    assert.ok(origin, `DEFAULT_FRONTEND_BASE_URL missing in ${innerEnvFile}`);
     assert.equal(
-      fallback,
+      new URL(origin).port,
       expectedFrontendPort,
-      `frontend-origin DEFAULT_FRONTEND_BASE_URL should use ${expectedFrontendPort}, got ${fallback}`,
+      `frontend-origin DEFAULT_FRONTEND_BASE_URL should use ${expectedFrontendPort}, got ${origin}`,
     );
   });
 
@@ -269,7 +280,7 @@ describe(`Code-side port defaults are internally consistent (${repoLabel}: API=$
 
   it(`AgentRouter.ts API port fallback is ${expectedApiPort}`, () => {
     const fallback = readTsFallback(
-      'packages/api/src/domains/cats/services/agents/routing/AgentRouter.ts',
+      'packages/api/src/domains/agents/services/agents/routing/AgentRouter.ts',
       /API_SERVER_PORT\s*\?\?\s*'(\d+)'/,
     );
     assert.equal(
@@ -282,7 +293,7 @@ describe(`Code-side port defaults are internally consistent (${repoLabel}: API=$
   it(`start-windows.ps1 API fallback is ${expectedApiPort}`, () => {
     const fallback = readPowerShellFallback(
       'scripts/start-windows.ps1',
-      /\$ApiPort = if \(\$env:API_SERVER_PORT\) \{ \$env:API_SERVER_PORT \} else \{ "(\d+)" \}/,
+      /\$ConfiguredApiPort = if \(\$env:API_SERVER_PORT\) \{[^}]*\} else \{ (\d+) \}/,
     );
     assert.equal(
       fallback,
@@ -294,7 +305,7 @@ describe(`Code-side port defaults are internally consistent (${repoLabel}: API=$
   it(`start-windows.ps1 Frontend fallback is ${expectedFrontendPort}`, () => {
     const fallback = readPowerShellFallback(
       'scripts/start-windows.ps1',
-      /\$WebPort = if \(\$env:FRONTEND_PORT\) \{ \$env:FRONTEND_PORT \} else \{ "(\d+)" \}/,
+      /\$ConfiguredWebPort = if \(\$env:FRONTEND_PORT\) \{[^}]*\} else \{ (\d+) \}/,
     );
     assert.equal(
       fallback,
@@ -306,7 +317,7 @@ describe(`Code-side port defaults are internally consistent (${repoLabel}: API=$
   it('start-windows.ps1 Redis fallback uses repo-local default', () => {
     const fallback = readPowerShellFallback(
       'scripts/start-windows.ps1',
-      /\$RedisPort = if \(\$env:REDIS_PORT\) \{ \$env:REDIS_PORT \} else \{ "(\d+)" \}/,
+      /\$ConfiguredRedisPort = if \(\$env:REDIS_PORT\) \{[^}]*\} else \{ (\d+) \}/,
     );
     assert.equal(fallback, '6399');
   });
@@ -336,23 +347,44 @@ describe(`Code-side port defaults are internally consistent (${repoLabel}: API=$
 
   it(`install.ps1 minimal .env fallback uses API ${expectedApiPort} and Frontend ${expectedFrontendPort}`, () => {
     const content = readFileSync(resolve(ROOT, 'scripts/install.ps1'), 'utf-8');
-    assert.ok(
-      content.includes(`FRONTEND_PORT=${expectedFrontendPort}`),
-      `install.ps1 minimal .env should set FRONTEND_PORT=${expectedFrontendPort}`,
+    const frontendDefault =
+      content.match(/\$defaultFrontendPort = if \([^)]*\) \{[^}]*\} else \{ "(\d+)" \}/)?.[1] ??
+      null;
+    const apiDefault =
+      content.match(/\$defaultApiPort = if \([^)]*\) \{[^}]*\} else \{ "(\d+)" \}/)?.[1] ?? null;
+    assert.equal(
+      frontendDefault,
+      expectedFrontendPort,
+      `install.ps1 default FRONTEND_PORT should be ${expectedFrontendPort}, got ${frontendDefault}`,
+    );
+    assert.equal(
+      apiDefault,
+      expectedApiPort,
+      `install.ps1 default API_SERVER_PORT should be ${expectedApiPort}, got ${apiDefault}`,
     );
     assert.ok(
-      content.includes(`API_SERVER_PORT=${expectedApiPort}`),
-      `install.ps1 minimal .env should set API_SERVER_PORT=${expectedApiPort}`,
+      content.includes('FRONTEND_PORT=$defaultFrontendPort'),
+      'install.ps1 minimal .env should write the resolved frontend port',
     );
     assert.ok(
-      content.includes(`NEXT_PUBLIC_API_URL=http://localhost:${expectedApiPort}`),
-      `install.ps1 minimal .env should set NEXT_PUBLIC_API_URL to localhost:${expectedApiPort}`,
+      content.includes('API_SERVER_PORT=$defaultApiPort'),
+      'install.ps1 minimal .env should write the resolved API port',
+    );
+    assert.ok(
+      content.includes('NEXT_PUBLIC_API_URL=http://localhost:$defaultApiPort'),
+      'install.ps1 minimal .env should point NEXT_PUBLIC_API_URL at the resolved API port',
     );
   });
 
   it('install.ps1 Redis fallback uses repo-local default', () => {
     const content = readFileSync(resolve(ROOT, 'scripts/install.ps1'), 'utf-8');
-    assert.ok(content.includes('REDIS_PORT=6399'));
+    const redisDefault =
+      content.match(/\$defaultRedisPort = if \([^)]*\) \{[^}]*\} else \{ "(\d+)" \}/)?.[1] ?? null;
+    assert.equal(redisDefault, '6399');
+    assert.ok(
+      content.includes('REDIS_PORT=$defaultRedisPort'),
+      'install.ps1 minimal .env should write the resolved Redis port',
+    );
   });
 
   it(`install.ps1 post-install open URL fallback uses frontend port ${expectedFrontendPort}`, () => {
