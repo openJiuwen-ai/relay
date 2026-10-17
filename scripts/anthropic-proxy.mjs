@@ -42,16 +42,38 @@ function getArg(name) {
   return idx >= 0 && idx + 1 < args.length ? args[idx + 1] : undefined;
 }
 
-const PORT = parseInt(getArg('port') || process.env.ANTHROPIC_PROXY_PORT || '9877', 10);
+function parseIntegerSetting(rawValue, name, fallback, { min, max }) {
+  if (rawValue == null || String(rawValue).trim() === '') return fallback;
+  const text = String(rawValue).trim();
+  if (!/^\d+$/.test(text)) {
+    console.error(`Invalid ${name}: ${text} (expected an integer)`);
+    process.exit(1);
+  }
+  const value = Number(text);
+  if (value < min || value > max) {
+    console.error(`Invalid ${name}: ${text} (expected ${min}-${max})`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const PORT = parseIntegerSetting(
+  getArg('port') ?? process.env.ANTHROPIC_PROXY_PORT,
+  'ANTHROPIC_PROXY_PORT',
+  9877,
+  { min: 1, max: 65535 },
+);
 const DEBUG = args.includes('--debug') || process.env.ANTHROPIC_PROXY_DEBUG === '1';
 const UPSTREAMS_PATH =
   getArg('upstreams') ||
   process.env.ANTHROPIC_PROXY_UPSTREAMS_PATH ||
   resolve(PROJECT_ROOT, '.office-claw', 'proxy-upstreams.json');
 const MAX_RETRIES = parseCount(getArg('max-retries') || process.env.ANTHROPIC_PROXY_MAX_RETRIES, 3);
-const UPSTREAM_TIMEOUT_MS = parseInt(
-  getArg('upstream-timeout') || process.env.ANTHROPIC_PROXY_UPSTREAM_TIMEOUT_MS || '60000',
-  10,
+const UPSTREAM_TIMEOUT_MS = parseIntegerSetting(
+  getArg('upstream-timeout') ?? process.env.ANTHROPIC_PROXY_UPSTREAM_TIMEOUT_MS,
+  'ANTHROPIC_PROXY_UPSTREAM_TIMEOUT_MS',
+  60000,
+  { min: 1, max: 2147483647 },
 );
 const RETRYABLE_HTTP_STATUSES = new Set([429, 529]);
 const RETRYABLE_NETWORK_CODES = new Set([
