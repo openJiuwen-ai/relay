@@ -111,13 +111,22 @@ else if (args.includes('--check')) {
   });
 
   console.log('\n📄 Latest crash report:\n');
-  const latest = JSON.parse(fs.readFileSync(files[0].path, 'utf8'));
-  console.log(`Service: ${latest.service || 'desktop'}`);
-  console.log(`Time: ${latest.timestamp}`);
-  console.log(`Exception: ${latest.exception.name || latest.exception.type}`);
-  console.log(`Message: ${latest.exception.message}`);
+  let latest;
+  try {
+    latest = JSON.parse(fs.readFileSync(files[0].path, 'utf8'));
+  } catch (error) {
+    console.error(`❌ Cannot parse latest crash report: ${files[0].name}`);
+    console.error(`   ${error instanceof Error ? error.message : String(error)}`);
+    console.error('   The report may be truncated or from an incompatible version.');
+    process.exit(1);
+  }
+  const exception = latest?.exception ?? {};
+  console.log(`Service: ${latest?.service || 'desktop'}`);
+  console.log(`Time: ${latest?.timestamp ?? 'unknown'}`);
+  console.log(`Exception: ${exception.name || exception.type || 'Unknown'}`);
+  console.log(`Message: ${exception.message ?? 'n/a'}`);
 
-  if (latest.context) {
+  if (latest?.context) {
     console.log(`Context: ${JSON.stringify(latest.context, null, 2)}`);
   }
 

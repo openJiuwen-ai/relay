@@ -59,48 +59,66 @@ function listCrashReports(service = null) {
 }
 
 function displayCrashReport(reportPath) {
-  const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+  let report;
+  try {
+    report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+  } catch (error) {
+    console.error(`\n⚠️  Cannot read crash report: ${path.basename(reportPath)}`);
+    console.error(`   ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      '   The report may be truncated (process killed mid-write) or from an incompatible version.',
+    );
+    return false;
+  }
+  if (!report || typeof report !== 'object') {
+    console.error(`\n⚠️  Cannot read crash report: ${path.basename(reportPath)} (unexpected JSON shape)`);
+    return false;
+  }
+
+  const exception = report.exception ?? {};
+  const processInfo = report.process ?? {};
+  const systemInfo = report.system ?? {};
 
   console.log('\n' + '='.repeat(80));
   console.log(`Crash Report: ${path.basename(reportPath)}`);
   console.log('='.repeat(80));
 
-  console.log(`\n📅 Timestamp: ${report.timestamp}`);
+  console.log(`\n📅 Timestamp: ${report.timestamp ?? 'unknown'}`);
   console.log(`🔧 Service: ${report.service || 'desktop'}`);
 
   console.log('\n💥 Exception:');
-  console.log(`  Type: ${report.exception.name || report.exception.type}`);
-  console.log(`  Message: ${report.exception.message}`);
-  if (report.exception.code) {
-    console.log(`  Code: ${report.exception.code}`);
+  console.log(`  Type: ${exception.name || exception.type || 'Unknown'}`);
+  console.log(`  Message: ${exception.message ?? 'n/a'}`);
+  if (exception.code) {
+    console.log(`  Code: ${exception.code}`);
   }
 
   console.log('\n📚 Stack Trace:');
-  const stack = report.exception.stack || report.exception.stackTrace;
+  const stack = exception.stack || exception.stackTrace;
   if (stack) {
     console.log(stack.split('\n').map(line => `  ${line}`).join('\n'));
   }
 
   console.log('\n⚙️  Process Info:');
-  console.log(`  PID: ${report.process.pid || report.process.id}`);
-  if (report.process.version) {
-    console.log(`  Node Version: ${report.process.version}`);
+  console.log(`  PID: ${processInfo.pid || processInfo.id || 'unknown'}`);
+  if (processInfo.version) {
+    console.log(`  Node Version: ${processInfo.version}`);
   }
-  if (report.process.workingSet) {
-    console.log(`  Memory: ${(report.process.workingSet / 1024 / 1024).toFixed(2)} MB`);
-  } else if (report.process.memoryUsage) {
-    const mem = report.process.memoryUsage;
+  if (processInfo.workingSet) {
+    console.log(`  Memory: ${(processInfo.workingSet / 1024 / 1024).toFixed(2)} MB`);
+  } else if (processInfo.memoryUsage) {
+    const mem = processInfo.memoryUsage;
     console.log(`  Memory RSS: ${(mem.rss / 1024 / 1024).toFixed(2)} MB`);
     console.log(`  Memory Heap: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} / ${(mem.heapTotal / 1024 / 1024).toFixed(2)} MB`);
   }
 
   console.log('\n🖥️  System Info:');
-  console.log(`  OS: ${report.system.os || report.system.type} ${report.system.release || ''}`);
-  if (report.system.hostname) {
-    console.log(`  Hostname: ${report.system.hostname}`);
+  console.log(`  OS: ${systemInfo.os || systemInfo.type || 'unknown'} ${systemInfo.release || ''}`);
+  if (systemInfo.hostname) {
+    console.log(`  Hostname: ${systemInfo.hostname}`);
   }
-  if (report.system.cpus) {
-    console.log(`  CPUs: ${report.system.cpus}`);
+  if (systemInfo.cpus) {
+    console.log(`  CPUs: ${systemInfo.cpus}`);
   }
 
   if (report.context && Object.keys(report.context).length > 0) {
@@ -117,6 +135,7 @@ function displayCrashReport(reportPath) {
   }
 
   console.log('\n' + '='.repeat(80) + '\n');
+  return true;
 }
 
 function cleanOldReports(daysOld = 7) {
@@ -185,7 +204,9 @@ function main() {
   }
 
   if (args.latest) {
-    displayCrashReport(reports[0].path);
+    if (!displayCrashReport(reports[0].path)) {
+      process.exitCode = 1;
+    }
   } else {
     console.log(`\nFound ${reports.length} crash report(s):\n`);
     reports.forEach((report, index) => {
