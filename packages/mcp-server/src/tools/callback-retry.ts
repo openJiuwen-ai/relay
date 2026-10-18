@@ -52,7 +52,22 @@ export async function postJsonWithRetry(
       });
 
       if (response.ok) {
-        return { ok: true, data: await response.json() };
+        // A 2xx means the callback was accepted. Parsing must not turn a
+        // successful delivery into a retry: empty bodies (204), 202 ACKs and
+        // non-JSON acknowledgements are valid, and retrying them would POST
+        // the same callback again.
+        if (typeof response.text !== 'function') {
+          return { ok: true, data: await response.json() };
+        }
+        const text = await response.text();
+        if (!text.trim()) {
+          return { ok: true, data: null };
+        }
+        try {
+          return { ok: true, data: JSON.parse(text) };
+        } catch {
+          return { ok: true, data: text };
+        }
       }
 
       const text = await response.text();
