@@ -136,9 +136,22 @@ function createProxyError(err, fallbackStatus = 502) {
 function loadUpstreams() {
   try {
     const raw = readFileSync(UPSTREAMS_PATH, 'utf-8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return Object.create(null);
+    }
+    // Null-prototype map: a slug such as "__proto__" or "constructor" must
+    // resolve only when the config file actually defines it, never through
+    // Object.prototype.
+    const upstreams = Object.create(null);
+    for (const [slug, base] of Object.entries(parsed)) {
+      if (typeof base === 'string' && base.length > 0) {
+        upstreams[slug] = base;
+      }
+    }
+    return upstreams;
   } catch {
-    return {};
+    return Object.create(null);
   }
 }
 
@@ -340,7 +353,10 @@ const server = createServer(async (req, res) => {
   const restPath = match[2] || '/';
 
   const upstreams = loadUpstreams();
-  const targetBase = upstreams[slug]?.replace(/\/+$/, '');
+  const configuredBase = Object.hasOwn(upstreams, slug) ? upstreams[slug] : undefined;
+  const targetBase = typeof configuredBase === 'string'
+    ? configuredBase.replace(/\/+$/, '')
+    : undefined;
 
   if (!targetBase) {
     res.writeHead(404, { 'content-type': 'application/json' });
