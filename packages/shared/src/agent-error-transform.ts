@@ -284,10 +284,10 @@ export function getFriendlyAgentErrorMessage(msg: ErrorLike, serial?: string): s
         message = '这次响应中断了，我没能稳定完成处理。请重试一次；如果连续出现，请稍后再试。';
     } else if (isConfigurationError(rawError)) {
         message = getConfigurationErrorMessage(rawError);
-    } else if (isConnectionError(rawError)) {
-        message = '当前智能体连接不稳定，暂时无法完成这次处理。请稍后重试；如果持续出现，说明后端服务可能需要检查。';
     } else if (isStreamConnectionError(rawError)) {
         message = STREAM_CONNECTION_ERROR_MESSAGE;
+    } else if (isConnectionError(rawError)) {
+        message = '当前智能体连接不稳定，暂时无法完成这次处理。请稍后重试；如果持续出现，说明后端服务可能需要检查。';
     } else if (isMaxIterationsReachedError(rawError)) {
         message = '已达到本次对话允许的最大思考轮数，任务未在限定的轮数内完成。';
     } else {

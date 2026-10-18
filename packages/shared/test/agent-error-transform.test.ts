@@ -114,6 +114,14 @@ describe('getFriendlyAgentErrorMessage', () => {
     assert.match(msg, /连接|重试/);
   });
 
+  it('prefers stream guidance when a stream error also matches connection', () => {
+    const msg = getFriendlyAgentErrorMessage({
+      agentId: 'codex',
+      error: 'openAI API async stream error: WebSocket connection closed unexpectedly',
+    });
+    assert.match(msg, /响应中断|休眠|网络不稳定/);
+  });
+
   it('generates friendly message for config errors', () => {
     const msg = getFriendlyAgentErrorMessage({
       agentId: 'jiuwen',
